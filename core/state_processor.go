@@ -26,6 +26,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/aura"
+	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -115,6 +117,11 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	}
 	if precompileCache != nil {
 		evm.SetPrecompileCache(precompileCache)
+	}
+	// Apply pre-execution system calls.
+	if b, ok := p.chain.Engine().(*beacon.Beacon); ok {
+		b.SetAuraSyscall(MakeAuraSyscall(tracingStateDB, context, p.chain.Config(), cfg))
+		b.AuraPrepare(p.chain, block.Header(), statedb)
 	}
 	// Run the pre-execution system calls
 	blockAccessList.Merge(PreExecution(ctx, block.BeaconRoot(), parent, config, evm, block.Number(), block.Time()))
@@ -282,6 +289,24 @@ func applyTransactionWithEVM(ctx context.Context, msg *Message, gp *GasPool, sta
 			defer func() { hooks.OnTxEnd(receipt, err) }()
 		}
 	}
+
+	if evm.ChainConfig().IsLondon(blockNumber) {
+		switch engine := engine.(type) {
+		case *beacon.Beacon:
+			if a, ok := engine.InnerEngine().(*aura.AuRa); ok && msg.GasFeeCap.BitLen() == 0 {
+				if a.IsServiceTransaction(msg.From) {
+					msg.SetFree()
+				}
+			}
+		case *aura.AuRa:
+			if msg.GasFeeCap.BitLen() == 0 {
+				if engine.IsServiceTransaction(msg.From) {
+					msg.SetFree()
+				}
+			}
+		}
+	}
+
 	// Apply the transaction to the current state (included in the env).
 	result, err := ApplyMessage(evm, msg, gp)
 	if err != nil {
@@ -562,4 +587,16 @@ func AssembleBlock(chain consensus.ChainHeaderReader, header *types.Header, stat
 	balHash := bal.Hash()
 	header.BlockAccessListHash = &balHash
 	return types.NewBlock(header, body, receipts, trie.NewStackTrie(nil)).WithAccessListUnsafe(bal)
+}
+
+func MakeAuraSyscall(statedb vm.StateDB, context vm.BlockContext, chainConfig *params.ChainConfig, vmConfig vm.Config) aura.Syscall {
+	return func(contractaddr common.Address, data []byte) ([]byte, error) {
+		evm := vm.NewEVM(context, statedb, chainConfig, vmConfig)
+		ret, _, err := evm.Call(params.SystemAddress, contractaddr, data, math.MaxUint64, new(uint256.Int))
+		if err != nil {
+			panic(err)
+		}
+		statedb.Finalise(true)
+		return ret, err
+	}
 }

@@ -296,6 +296,8 @@ type Message struct {
 	// execution after Amsterdam, instead of capping it at params.MaxTxGas and
 	// moving the remainder into the EIP-8037 state gas reservoir.
 	skipExecutionGasCap bool
+
+	isFree bool
 }
 
 // SkipNonceCheck disables the check of the message nonce against the account
@@ -324,6 +326,14 @@ func (msg *Message) SkipGasLimitCapCheck() *Message {
 func (msg *Message) SkipExecutionGasCapCheck() *Message {
 	msg.skipExecutionGasCap = true
 	return msg
+}
+
+func (msg *Message) SetFree() {
+	msg.isFree = true
+}
+
+func (msg *Message) IsFree() bool {
+	return msg.isFree
 }
 
 // TransactionToMessage converts a transaction into a Message.
@@ -615,7 +625,7 @@ func (st *stateTransition) preCheck(rules params.Rules) error {
 			}
 			// This will panic if baseFee is nil, but basefee presence is verified
 			// as part of header validation.
-			if msg.GasFeeCap.CmpBig(st.evm.Context.BaseFee) < 0 {
+			if msg.GasFeeCap.CmpBig(st.evm.Context.BaseFee) < 0 && !msg.IsFree() {
 				return fmt.Errorf("%w: address %v, maxFeePerGas: %s, baseFee: %s", ErrFeeCapTooLow,
 					msg.From.Hex(), msg.GasFeeCap, st.evm.Context.BaseFee)
 			}
@@ -816,6 +826,20 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 	fee := new(uint256.Int).SetUint64(gasUsed)
 	fee.Mul(fee, effectiveTip)
 	st.state.AddBalance(st.evm.Context.Coinbase, fee, tracing.BalanceIncreaseRewardTransactionFee)
+
+	// XXX rules.IsLondon shouldn't be necessary
+	// Move the remainder to the eip1559 fee collector
+	if rules.IsLondon {
+		if !msg.IsFree() && st.evm.ChainConfig().Aura != nil {
+			burntContractAddress := *st.evm.ChainConfig().Aura.Eip1559FeeCollector
+			burnAmount := new(uint256.Int).Mul(new(uint256.Int).SetUint64(gasUsed), uint256.MustFromBig(st.evm.Context.BaseFee))
+			st.state.AddBalance(burntContractAddress, burnAmount, tracing.BalanceIncreaseRewardTransactionFee)
+			if rules.IsPrague && st.evm.Context.BlobBaseFee != nil {
+				blobfee := uint256.NewInt(st.blobGasUsed() * st.evm.Context.BlobBaseFee.Uint64())
+				st.state.AddBalance(burntContractAddress, blobfee, tracing.BalanceChangeUnspecified)
+			}
+		}
+	}
 
 	// add the coinbase to the witness iff the fee is greater than 0
 	if rules.IsEIP4762 && fee.Sign() != 0 {
