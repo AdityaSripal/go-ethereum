@@ -147,6 +147,9 @@ var (
 	configPrefix   = []byte("ethereum-config-")  // config prefix for the db
 	genesisPrefix  = []byte("ethereum-genesis-") // genesis state prefix for the db
 
+	EpochPrefix        = []byte("aura-epoch-")
+	PendingEpochPrefix = []byte("aura-pending-epoch-")
+
 	CliqueSnapshotPrefix = []byte("clique-")
 
 	BestUpdateKey         = []byte("update-")    // bigEndian64(syncPeriod) -> RLP(types.LightClientUpdate)  (nextCommittee only referenced by root hash)
@@ -457,4 +460,12 @@ func trienodeHistoryIndexBlockKey(addressHash common.Hash, path []byte, blockID 
 	binary.BigEndian.PutUint32(out[off:], blockID)
 
 	return out
+}
+
+func epochKey(key []byte) []byte {
+	return append(EpochPrefix, key...)
+}
+
+func pendingEpochKey(key []byte) []byte {
+	return append(PendingEpochPrefix, key...)
 }
