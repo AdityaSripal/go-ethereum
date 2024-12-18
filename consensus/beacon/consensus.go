@@ -335,27 +335,87 @@ func (beacon *Beacon) verifyHeaders(chain consensus.ChainHeaderReader, headers [
 // header to conform to the beacon protocol. The changes are done inline.
 func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
 	if !chain.Config().IsPostMerge(header.Number.Uint64(), header.Time) {
-		return beacon.ethone.Prepare(chain, header)
+		return beacon.ethone.Prepare(chain, header, statedb)
 	}
 	header.Difficulty = beaconDifficulty
 	return nil
 }
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
-func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
+func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body, receipts []*types.Receipt) {
 	if !beacon.IsPoSHeader(header) {
-		beacon.ethone.Finalize(chain, header, state, body)
+		beacon.ethone.Finalize(chain, header, state, body, receipts)
 		return
 	}
+
+	// GNOSIS: if the network has merged and this was an ex-AuRa
+	// network, still call the reward contract.
+	if a, ok := beacon.ethone.(*aura.AuRa); ok {
+		if err := a.ApplyRewards(header, state); err != nil {
+			panic(fmt.Sprintf("error applying reward %v", err))
+		}
+	}
+
 	// Withdrawals processing.
-	for _, w := range body.Withdrawals {
-		// Convert amount from gwei to wei.
-		amount := new(uint256.Int).SetUint64(w.Amount)
-		amount = amount.Mul(amount, uint256.NewInt(params.GWei))
-		state.AddBalance(w.Address, amount, tracing.BalanceIncreaseWithdrawal)
+	if auraEngine, ok := beacon.ethone.(*aura.AuRa); ok {
+		if body.Withdrawals != nil {
+			if err := auraEngine.ExecuteSystemWithdrawals(body.Withdrawals); err != nil {
+				panic(err)
+			}
+		}
+	} else {
+		for _, w := range body.Withdrawals {
+			// Convert amount from gwei to wei.
+			amount := new(uint256.Int).SetUint64(w.Amount)
+			amount = amount.Mul(amount, uint256.NewInt(params.GWei))
+			state.AddBalance(w.Address, amount, tracing.BalanceIncreaseWithdrawal)
+		}
 	}
 	// No block reward which is issued by consensus layer instead.
 }
+
+// FinalizeAndAssemble implements consensus.Engine, setting the final state and
+// assembling the block.
+func (beacon *Beacon) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (result *types.Block, err error) {
+	ctx, _, spanEnd := telemetry.StartSpan(ctx, "consensus.beacon.FinalizeAndAssemble",
+		telemetry.Int64Attribute("block.number", int64(header.Number.Uint64())),
+		telemetry.Int64Attribute("txs.count", int64(len(body.Transactions))),
+		telemetry.Int64Attribute("withdrawals.count", int64(len(body.Withdrawals))),
+	)
+	defer spanEnd(&err)
+
+	if !beacon.IsPoSHeader(header) {
+		block, delegateErr := beacon.ethone.FinalizeAndAssemble(ctx, chain, header, state, body, receipts)
+		return block, delegateErr
+	}
+	shanghai := chain.Config().IsShanghai(header.Number, header.Time)
+	if shanghai {
+		// All blocks after Shanghai must include a withdrawals root.
+		if body.Withdrawals == nil {
+			body.Withdrawals = make([]*types.Withdrawal, 0)
+		}
+	} else {
+		if len(body.Withdrawals) > 0 {
+			return nil, errors.New("withdrawals set before Shanghai activation")
+		}
+	}
+	// Finalize and assemble the block.
+	_, _, finalizeSpanEnd := telemetry.StartSpan(ctx, "consensus.beacon.Finalize")
+	beacon.Finalize(chain, header, state, body, receipts)
+	finalizeSpanEnd(nil)
+
+	// Assign the final state root to header.
+	_, _, rootSpanEnd := telemetry.StartSpan(ctx, "consensus.beacon.IntermediateRoot")
+	header.Root = state.IntermediateRoot(true)
+	rootSpanEnd(nil)
+
+	// Assemble the final block.
+	_, _, blockSpanEnd := telemetry.StartSpan(ctx, "consensus.beacon.NewBlock")
+	block := types.NewBlock(header, body, receipts, trie.NewStackTrie(nil))
+	blockSpanEnd(nil)
+	return block, nil
+}
+
 
 // Seal generates a new sealing request for the given input block and pushes
 // the result into the given channel.
@@ -397,6 +457,12 @@ func (beacon *Beacon) Close() error {
 // This function is not suitable for a part of APIs like Prepare or CalcDifficulty
 // because the header difficulty is not set yet.
 func (beacon *Beacon) IsPoSHeader(header *types.Header) bool {
+	// REBASE this should no longer be needed
+	// return header.Difficulty.Cmp(beaconDifficulty) == 0
+	// return header.Number.Cmp(big.NewInt())
+	// non-uint64 block numbers are 2,92271023×10¹² years in
+	// the future, but better be ready.
+	//return !header.Number.IsInt64() || header.Number.Uint64() >= params.GnosisForkBlock || header.Difficulty.Cmp(common.Big0) == 0
 	if header.Difficulty == nil {
 		panic("IsPoSHeader called with invalid difficulty")
 	}
@@ -417,4 +483,18 @@ func (beacon *Beacon) SetThreads(threads int) {
 	if th, ok := beacon.ethone.(threaded); ok {
 		th.SetThreads(threads)
 	}
+}
+
+func (beacon *Beacon) SetAuraSyscall(sc aura.Syscall) {
+	if a, ok := beacon.ethone.(*aura.AuRa); ok {
+		a.Syscall = sc
+	}
+}
+
+func (beacon *Beacon) AuraPrepare(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) {
+	// mark down if the current chain has merged
+	if a, ok := beacon.ethone.(*aura.AuRa); ok {
+		a.SetMerged(beacon.IsPoSHeader(header))
+	}
+	beacon.ethone.Prepare(chain, header, statedb)
 }
