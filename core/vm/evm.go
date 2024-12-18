@@ -18,6 +18,7 @@ package vm
 
 import (
 	"errors"
+	"math"
 	"math/big"
 	"sync/atomic"
 
@@ -480,7 +481,7 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 }
 
 // create creates a new contract using code as deployment code.
-func (evm *EVM) create(caller common.Address, code []byte, gas GasBudget, value *uint256.Int, address common.Address, typ OpCode) (ret []byte, createAddress common.Address, leftOverGas GasBudget, err error) {
+func (evm *EVM) create(caller common.Address, code []byte, gas GasBudget, value *uint256.Int, address common.Address, typ OpCode, incrementSenderNonce bool) (ret []byte, createAddress common.Address, leftOverGas GasBudget, err error) {
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, typ, caller, address, code, gas.RegularGas, value.ToBig())
 		defer func(startGas uint64) {
@@ -495,11 +496,13 @@ func (evm *EVM) create(caller common.Address, code []byte, gas GasBudget, value 
 	if !evm.Context.CanTransfer(evm.StateDB, caller, value) {
 		return nil, common.Address{}, gas, ErrInsufficientBalance
 	}
-	nonce := evm.StateDB.GetNonce(caller)
-	if nonce+1 < nonce {
-		return nil, common.Address{}, gas, ErrNonceUintOverflow
+	if incrementSenderNonce {
+		nonce := evm.StateDB.GetNonce(caller)
+		if nonce+1 < nonce {
+			return nil, common.Address{}, gas, ErrNonceUintOverflow
+		}
+		evm.StateDB.SetNonce(caller, nonce+1, tracing.NonceChangeContractCreator)
 	}
-	evm.StateDB.SetNonce(caller, nonce+1, tracing.NonceChangeContractCreator)
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
@@ -547,8 +550,10 @@ func (evm *EVM) create(caller common.Address, code []byte, gas GasBudget, value 
 	// acts inside that account.
 	evm.StateDB.CreateContract(address)
 
-	if evm.chainRules.IsEIP158 {
-		evm.StateDB.SetNonce(address, 1, tracing.NonceChangeNewContract)
+	// On gnosis chains, this is activated as part of SpuriousDragon in
+	// spite of being part of eip 161.
+	if evm.chainRules.IsEIP155 {
+		evm.StateDB.SetNonce(address, 1, tracing.NonceChangeContractCreator)
 	}
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
@@ -592,8 +597,10 @@ func (evm *EVM) initNewContract(contract *Contract, address common.Address) ([]b
 	}
 
 	// Check whether the max code size has been exceeded, assign err if the case.
-	if err := CheckMaxCodeSize(&evm.chainRules, uint64(len(ret))); err != nil {
-		return ret, err
+	if evm.chainRules.IsShanghai {
+		if err := CheckMaxCodeSize(&evm.chainRules, uint64(len(ret))); err != nil {
+			return ret, err
+		}
 	}
 
 	// Reject code starting with 0xEF if EIP-3541 is enabled.
@@ -623,7 +630,7 @@ func (evm *EVM) initNewContract(contract *Contract, address common.Address) ([]b
 // Create creates a new contract using code as deployment code.
 func (evm *EVM) Create(caller common.Address, code []byte, gas GasBudget, value *uint256.Int) (ret []byte, contractAddr common.Address, leftOverGas GasBudget, err error) {
 	contractAddr = crypto.CreateAddress(caller, evm.StateDB.GetNonce(caller))
-	return evm.create(caller, code, gas, value, contractAddr, CREATE)
+	return evm.create(caller, code, gas, value, contractAddr, CREATE, true)
 }
 
 // Create2 creates a new contract using code as deployment code.
@@ -633,7 +640,7 @@ func (evm *EVM) Create(caller common.Address, code []byte, gas GasBudget, value 
 func (evm *EVM) Create2(caller common.Address, code []byte, gas GasBudget, endowment *uint256.Int, salt *uint256.Int) (ret []byte, contractAddr common.Address, leftOverGas GasBudget, err error) {
 	inithash := crypto.Keccak256Hash(code)
 	contractAddr = crypto.CreateAddress2(caller, salt.Bytes32(), inithash[:])
-	return evm.create(caller, code, gas, endowment, contractAddr, CREATE2)
+	return evm.create(caller, code, gas, endowment, contractAddr, CREATE2, true)
 }
 
 // resolveCode returns the code associated with the provided account. After
@@ -706,4 +713,13 @@ func (evm *EVM) GetVMContext() *tracing.VMContext {
 		BaseFee:     evm.Context.BaseFee,
 		StateDB:     evm.StateDB,
 	}
+}
+
+func (evm *EVM) SysCreate(caller common.Address, code []byte, endowment *uint256.Int, contractAddr common.Address) (ret []byte, err error) {
+	gasBudget := GasBudget{
+		RegularGas: math.MaxUint64,
+		StateGas:   math.MaxUint64,
+	}
+	ret, _, _, err = evm.create(caller, code, gasBudget, endowment, contractAddr, CREATE, false /* incrementNonce */)
+	return
 }
