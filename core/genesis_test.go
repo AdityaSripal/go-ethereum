@@ -186,6 +186,8 @@ func TestGenesisHashes(t *testing.T) {
 		{DefaultGenesisBlock(), params.MainnetGenesisHash},
 		{DefaultSepoliaGenesisBlock(), params.SepoliaGenesisHash},
 		{DefaultHoodiGenesisBlock(), params.HoodiGenesisHash},
+		{DefaultGnosisGenesisBlock(), params.GnosisGenesisHash},
+		{DefaultChiadoGenesisBlock(), params.ChiadoGenesisHash},
 	} {
 		// Test via MustCommit
 		db := rawdb.NewMemoryDatabase()
