@@ -518,7 +518,7 @@ func (c *AuRa) Prepare(chain consensus.ChainHeaderReader, header *types.Header, 
 	// func (c *AuRa) Initialize(config *params.ChainConfig, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []types.Transaction, uncles []*types.Header, syscall consensus.SystemCall) {
 	blockNum := header.Number.Uint64()
 	for address, rewrittenCode := range c.cfg.RewriteBytecode[blockNum] {
-		statedb.SetCode(address, rewrittenCode)
+		statedb.SetCode(address, rewrittenCode, tracing.CodeChangeContractCreation)
 	}
 
 	c.certifierLock.Lock()
