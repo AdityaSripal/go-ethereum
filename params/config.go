@@ -322,6 +322,7 @@ type ChainConfig struct {
 	ShanghaiTime  *uint64 `json:"shanghaiTime,omitempty"`  // Shanghai switch time (nil = no fork, 0 = already on shanghai)
 	CancunTime    *uint64 `json:"cancunTime,omitempty"`    // Cancun switch time (nil = no fork, 0 = already on cancun)
 	PragueTime    *uint64 `json:"pragueTime,omitempty"`    // Prague switch time (nil = no fork, 0 = already on prague)
+	BalancerTime  *uint64 `json:"balancerTime,omitempty"`  // Balancer hack switch time (nil = no fork, 0 = already on fork)
 	OsakaTime     *uint64 `json:"osakaTime,omitempty"`     // Osaka switch time (nil = no fork, 0 = already on osaka)
 	BPO1Time      *uint64 `json:"bpo1Time,omitempty"`      // BPO1 switch time (nil = no fork, 0 = already on bpo1)
 	BPO2Time      *uint64 `json:"bpo2Time,omitempty"`      // BPO2 switch time (nil = no fork, 0 = already on bpo2)
@@ -447,6 +448,9 @@ func (c *ChainConfig) String() string {
 	if c.PragueTime != nil {
 		result += fmt.Sprintf(", PragueTime: %v", *c.PragueTime)
 	}
+	if c.BalancerTime != nil {
+		result += fmt.Sprintf(", BalancerTime: %v", *c.BalancerTime)
+	}
 	if c.OsakaTime != nil {
 		result += fmt.Sprintf(", OsakaTime: %v", *c.OsakaTime)
 	}
@@ -547,6 +551,9 @@ func (c *ChainConfig) Description() string {
 	if c.PragueTime != nil {
 		banner += fmt.Sprintf(" - Prague:                      @%-10v blob: (%s)\n", *c.PragueTime, c.BlobScheduleConfig.Prague)
 	}
+	if c.BalancerTime != nil {
+		banner += fmt.Sprintf(" - Balancer:                    @%-10v blob: (%s)\n", *c.BalancerTime, c.BlobScheduleConfig.Balancer)
+	}
 	if c.OsakaTime != nil {
 		banner += fmt.Sprintf(" - Osaka:                       @%-10v\n", *c.OsakaTime)
 	}
@@ -599,13 +606,14 @@ func (bc *BlobConfig) String() string {
 // forks. Named forks such as Osaka or Amsterdam inherit the most recently configured
 // BPO entry and must not declare their own BlobConfig.
 type BlobScheduleConfig struct {
-	Cancun *BlobConfig `json:"cancun,omitempty"`
-	Prague *BlobConfig `json:"prague,omitempty"`
-	BPO1   *BlobConfig `json:"bpo1,omitempty"`
-	BPO2   *BlobConfig `json:"bpo2,omitempty"`
-	BPO3   *BlobConfig `json:"bpo3,omitempty"`
-	BPO4   *BlobConfig `json:"bpo4,omitempty"`
-	BPO5   *BlobConfig `json:"bpo5,omitempty"`
+	Cancun   *BlobConfig `json:"cancun,omitempty"`
+	Prague   *BlobConfig `json:"prague,omitempty"`
+	Balancer *BlobConfig `json:"balancer,omitempty"`
+	BPO1     *BlobConfig `json:"bpo1,omitempty"`
+	BPO2     *BlobConfig `json:"bpo2,omitempty"`
+	BPO3     *BlobConfig `json:"bpo3,omitempty"`
+	BPO4     *BlobConfig `json:"bpo4,omitempty"`
+	BPO5     *BlobConfig `json:"bpo5,omitempty"`
 }
 
 // IsHomestead returns whether num is either equal to the homestead block or greater.
@@ -711,6 +719,11 @@ func (c *ChainConfig) IsCancun(num *big.Int, time uint64) bool {
 // IsPrague returns whether time is either equal to the Prague fork time or greater.
 func (c *ChainConfig) IsPrague(num *big.Int, time uint64) bool {
 	return c.IsLondon(num) && isTimestampForked(c.PragueTime, time)
+}
+
+// IsBalancer returns whether time is either equal to the Balancer fork time or greater.
+func (c *ChainConfig) IsBalancer(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.BalancerTime, time)
 }
 
 // IsOsaka returns whether time is either equal to the Osaka fork time or greater.
@@ -986,6 +999,9 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	}
 	if isForkTimestampIncompatible(c.PragueTime, newcfg.PragueTime, headTimestamp) {
 		return newTimestampCompatError("Prague fork timestamp", c.PragueTime, newcfg.PragueTime)
+	}
+	if isForkTimestampIncompatible(c.BalancerTime, newcfg.BalancerTime, headTimestamp) {
+		return newTimestampCompatError("Balancer fork timestamp", c.OsakaTime, newcfg.OsakaTime)
 	}
 	if isForkTimestampIncompatible(c.OsakaTime, newcfg.OsakaTime, headTimestamp) {
 		return newTimestampCompatError("Osaka fork timestamp", c.OsakaTime, newcfg.OsakaTime)
