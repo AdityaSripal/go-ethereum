@@ -70,8 +70,9 @@ type AuRaConfig struct {
 
 	RewriteBytecode map[uint64]map[common.Address]hexutil.Bytes `json:"rewriteBytecode"`
 
-	BalancerRewriteAddress *common.Address `json:"balancerRewriteAddress,omitempty"`
-	BalancerRewriteCode    hexutil.Bytes   `json:"balancerRewriteCode,omitempty"`
+	BalancerRewriteAddress     *common.Address `json:"balancerRewriteAddress,omitempty"`
+	BalancerTestRewriteAddress *common.Address `json:"balancerTestRewriteAddress,omitempty"`
+	BalancerRewriteCode        hexutil.Bytes   `json:"balancerRewriteCode,omitempty"`
 
 	// Burn contract address
 	Eip1559FeeCollector *common.Address `json:"eip1559FeeCollector"`
