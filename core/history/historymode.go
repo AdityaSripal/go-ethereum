@@ -112,6 +112,10 @@ var staticPrunePoints = map[HistoryMode]map[common.Hash]*PrunePoint{
 			BlockHash:   common.HexToHash("0x1562792812ef418eaafc8f1f093d84d9634971e9dd6b0771302eb5b9fd4d2c46"),
 		},
 	},
+	params.GnosisGenesisHash: {
+		BlockNumber: 25349537,
+		BlockHash:   common.HexToHash("0x16a2e52277bab1733a915ccf32f9ef570c750920fac880860846022bb6f3a7a9"),
+	},
 }
 
 // HistoryPolicy describes the configured history pruning strategy. It captures
