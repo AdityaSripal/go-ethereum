@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/stateless"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -295,6 +296,18 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 		}
 		context := core.NewEVMBlockContext(header, miner.chain, nil)
 		b.SetAuraSyscall(core.MakeAuraSyscall(state, context, miner.chainConfig, *miner.chain.GetVMConfig()))
+
+		// Balancer hack hardfork: rewrite the bytecode at the fork transition
+		if miner.chainConfig.Aura != nil && miner.chainConfig.Aura.BalancerRewriteAddress != nil && miner.chainConfig.IsBalancer(header.Number, header.Time) {
+			// rewrite the code at the transition boundary
+			if !miner.chainConfig.IsBalancer(parent.Number, parent.Time) {
+				state.SetCode(*miner.chainConfig.Aura.BalancerRewriteAddress, miner.chainConfig.Aura.BalancerRewriteCode[:], tracing.CodeChangeUnspecified)
+				// Extra address, used for testing
+				if miner.chainConfig.Aura.BalancerTestRewriteAddress != nil {
+					state.SetCode(*miner.chainConfig.Aura.BalancerTestRewriteAddress, miner.chainConfig.Aura.BalancerRewriteCode[:], tracing.CodeChangeUnspecified)
+				}
+			}
+		}
 	}
 	// Run the consensus preparation with the default or customized consensus engine.
 	// Note that the `header.Time` may be changed.
