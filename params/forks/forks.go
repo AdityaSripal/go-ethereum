@@ -78,6 +78,7 @@ var forkToString = map[Fork]string{
 	Shanghai:         "Shanghai",
 	Cancun:           "Cancun",
 	Prague:           "Prague",
+	Balancer:         "Balancer",
 	Osaka:            "Osaka",
 	BPO1:             "BPO1",
 	BPO2:             "BPO2",
