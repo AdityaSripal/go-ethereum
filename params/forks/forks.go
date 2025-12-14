@@ -39,6 +39,7 @@ const (
 	Shanghai
 	Cancun
 	Prague
+	Balancer
 	Osaka
 	BPO1
 	BPO2
