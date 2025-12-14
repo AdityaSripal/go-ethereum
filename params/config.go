@@ -1178,6 +1178,8 @@ func (c *ChainConfig) LatestFork(time uint64) forks.Fork {
 		return forks.BPO1
 	case c.IsOsaka(london, time):
 		return forks.Osaka
+	case c.IsBalancer(london, time):
+		return forks.Balancer
 	case c.IsPrague(london, time):
 		return forks.Prague
 	case c.IsCancun(london, time):
@@ -1204,6 +1206,8 @@ func (c *ChainConfig) BlobConfig(fork forks.Fork) *BlobConfig {
 		return c.BlobScheduleConfig.BPO1
 	case forks.Osaka:
 		return c.BlobScheduleConfig.Osaka
+	case forks.Balancer:
+		return c.BlobScheduleConfig.Balancer
 	case forks.Prague:
 		return c.BlobScheduleConfig.Prague
 	case forks.Cancun:
@@ -1237,6 +1241,8 @@ func (c *ChainConfig) ActiveSystemContracts(time uint64) map[string]common.Addre
 // the fork isn't defined or isn't a time-based fork.
 func (c *ChainConfig) Timestamp(fork forks.Fork) *uint64 {
 	switch {
+	case fork == forks.Balancer:
+		return c.BalancerTime
 	case fork == forks.BPO5:
 		return c.BPO5Time
 	case fork == forks.BPO4:
