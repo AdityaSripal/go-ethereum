@@ -584,7 +584,7 @@ func (g *Genesis) toBlockWithRoot(root common.Hash) *types.Block {
 
 	// If this is an Aura chain but AuRaSeal is not provided or empty,
 	// set it to 65 zero bytes to ensure proper RLP encoding
-	if g.Config != nil && g.Config.Aura != nil && len(head.Signature) == 0 {
+	if g.Config != nil && g.Config.Aura != nil && len(head.Signature) == 0 && (g.Config.TerminalTotalDifficulty != nil && g.Config.TerminalTotalDifficulty.Sign() != 0) {
 		head.Signature = make([]byte, 65)
 	}
 	if g.GasLimit == 0 {
