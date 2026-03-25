@@ -113,6 +113,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	}
 	// Run the pre-execution system calls
 	PreExecution(ctx, block.BeaconRoot(), block.ParentHash(), config, evm, block.Number(), block.Time())
+
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
