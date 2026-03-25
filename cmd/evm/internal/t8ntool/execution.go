@@ -25,10 +25,10 @@ import (
 	"math/big"
 	"os"
 
-	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -56,7 +56,8 @@ type Prestate struct {
 	Pre types.GenesisAlloc `json:"pre"`
 	// AllocPath, when non-empty, causes Apply to stream the alloc from disk
 	// instead of reading Pre, so the full map never materializes in memory.
-	AllocPath string `json:"-"`
+	AllocPath string           `json:"-"`
+	Engine    consensus.Engine `json:"-"` // optional; used for aura service tx detection
 }
 
 //go:generate go run github.com/fjl/gencodec -type ExecutionResult -field-override executionResultMarshaling -out gen_execresult.go
