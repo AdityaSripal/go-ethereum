@@ -26,8 +26,17 @@ import (
 )
 
 func TestCalcExcessBlobGas(t *testing.T) {
+	// Use an explicit blob config with target=3 to avoid depending on global defaults.
+	zero := uint64(0)
+	config := &params.ChainConfig{
+		ChainID:     big.NewInt(1),
+		LondonBlock: big.NewInt(0),
+		CancunTime:  &zero,
+		BlobScheduleConfig: &params.BlobScheduleConfig{
+			Cancun: &params.BlobConfig{Target: 3, Max: 6, UpdateFraction: 3338477},
+		},
+	}
 	var (
-		config        = params.MainnetChainConfig
 		targetBlobs   = config.BlobScheduleConfig.Cancun.Target
 		targetBlobGas = uint64(targetBlobs) * params.BlobTxBlobGasPerBlob
 	)
@@ -72,17 +81,23 @@ func TestCalcExcessBlobGas(t *testing.T) {
 func TestCalcBlobFee(t *testing.T) {
 	zero := uint64(0)
 
+	// Use explicit Ethereum mainnet blob config to avoid depending on global defaults.
+	ethBlobSchedule := &params.BlobScheduleConfig{
+		Cancun: &params.BlobConfig{Target: 3, Max: 6, UpdateFraction: 3338477},
+	}
+
+	// Expected values account for BlobTxMinBlobGasprice (Gnosis: 1e9).
 	tests := []struct {
 		excessBlobGas uint64
 		blobfee       int64
 	}{
-		{0, 1},
-		{2314057, 1},
-		{2314058, 2},
-		{10 * 1024 * 1024, 23},
+		{0, 1000000000},
+		{2314057, 2000000647},
+		{2314058, 2000001246},
+		{10 * 1024 * 1024, 23124237411},
 	}
 	for i, tt := range tests {
-		config := &params.ChainConfig{LondonBlock: big.NewInt(0), CancunTime: &zero, BlobScheduleConfig: params.DefaultBlobSchedule}
+		config := &params.ChainConfig{LondonBlock: big.NewInt(0), CancunTime: &zero, BlobScheduleConfig: ethBlobSchedule}
 		header := &types.Header{ExcessBlobGas: &tt.excessBlobGas}
 		have := CalcBlobFee(config, header)
 		if have.Int64() != tt.blobfee {
@@ -97,6 +112,11 @@ func TestCalcBlobFeePostOsaka(t *testing.T) {
 	bpo2 := uint64(1754934912)
 	bpo3 := uint64(1755033216)
 
+	// Use explicit Ethereum mainnet blob configs to avoid depending on global defaults.
+	ethCancun := &params.BlobConfig{Target: 3, Max: 6, UpdateFraction: 3338477}
+	ethPrague := &params.BlobConfig{Target: 6, Max: 9, UpdateFraction: 5007716}
+	ethOsaka := &params.BlobConfig{Target: 6, Max: 9, UpdateFraction: 5007716}
+
 	tests := []struct {
 		excessBlobGas uint64
 		blobGasUsed   uint64
@@ -105,8 +125,9 @@ func TestCalcBlobFeePostOsaka(t *testing.T) {
 		parenttime    uint64
 		headertime    uint64
 	}{
-		{5149252, 1310720, 5617366, 30, 1754904516, 1754904528},
-		{19251039, 2490368, 20107103, 50, 1755033204, 1755033216},
+		// Expected excess values account for BlobTxMinBlobGasprice (Gnosis: 1e9).
+		{5149252, 1310720, 5280324, 30, 1754904516, 1754904528},
+		{19251039, 2490368, 18988895, 50, 1755033204, 1755033216},
 	}
 	for i, tt := range tests {
 		config := &params.ChainConfig{
@@ -118,9 +139,9 @@ func TestCalcBlobFeePostOsaka(t *testing.T) {
 			BPO2Time:    &bpo2,
 			BPO3Time:    &bpo3,
 			BlobScheduleConfig: &params.BlobScheduleConfig{
-				Cancun: params.DefaultCancunBlobConfig,
-				Prague: params.DefaultPragueBlobConfig,
-				Osaka:  params.DefaultOsakaBlobConfig,
+				Cancun: ethCancun,
+				Prague: ethPrague,
+				Osaka:  ethOsaka,
 				BPO1: &params.BlobConfig{
 					Target:         9,
 					Max:            14,
@@ -189,8 +210,23 @@ func TestFakeExponential(t *testing.T) {
 }
 
 func TestCalcExcessBlobGasEIP7918(t *testing.T) {
+	// Use explicit Ethereum mainnet blob config (target=6, max=9) to avoid
+	// depending on global defaults which are set to Gnosis values.
+	zero := uint64(0)
+	cfg := &params.ChainConfig{
+		ChainID:                 big.NewInt(1),
+		LondonBlock:             big.NewInt(0),
+		CancunTime:              &zero,
+		PragueTime:              &zero,
+		OsakaTime:               &zero,
+		TerminalTotalDifficulty: big.NewInt(0),
+		BlobScheduleConfig: &params.BlobScheduleConfig{
+			Cancun: &params.BlobConfig{Target: 3, Max: 6, UpdateFraction: 3338477},
+			Prague: &params.BlobConfig{Target: 6, Max: 9, UpdateFraction: 5007716},
+			Osaka:  &params.BlobConfig{Target: 6, Max: 9, UpdateFraction: 5007716},
+		},
+	}
 	var (
-		cfg           = params.MergedTestChainConfig
 		targetBlobs   = cfg.BlobScheduleConfig.Osaka.Target
 		blobGasTarget = uint64(targetBlobs) * params.BlobTxBlobGasPerBlob
 	)
@@ -204,6 +240,9 @@ func TestCalcExcessBlobGasEIP7918(t *testing.T) {
 		}
 	}
 
+	// With BlobTxMinBlobGasprice=1e9 (Gnosis), baseFee must exceed
+	// minBlobGasPrice * BlobTxBlobGasPerBlob / BlobBaseCost = 1.6e10
+	// for the reserve price to exceed the blob price and trigger EIP-7918.
 	tests := []struct {
 		name          string
 		header        *types.Header
@@ -211,7 +250,7 @@ func TestCalcExcessBlobGasEIP7918(t *testing.T) {
 	}{
 		{
 			name:          "BelowReservePrice",
-			header:        makeHeader(0, 1_000_000_000, targetBlobs),
+			header:        makeHeader(0, 20_000_000_000, targetBlobs),
 			wantExcessGas: blobGasTarget * 3 / 9,
 		},
 		{
