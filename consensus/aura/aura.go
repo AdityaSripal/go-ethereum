@@ -1183,7 +1183,6 @@ func (f *RollingFinality) buildAncestrySubChain(get func(hash common.Hash) ([]co
 }
 
 // sealHash computes the hash of a header prior to it being sealed.
-// Copied from consensus/clique to avoid an import cycle (clique <- core <- aura <- clique).
 func sealHash(header *types.Header) (hash common.Hash) {
 	hasher := sha3.NewLegacyKeccak256()
 	encodeSigHeader(hasher, header)
