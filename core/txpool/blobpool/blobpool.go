@@ -563,7 +563,7 @@ func (p *BlobPool) Init(gasTip uint64, head *types.Header, reserver txpool.Reser
 	p.state = state
 
 	// Create new slotter for pre-Osaka blob configuration.
-	slotter := newSlotter(params.BlobTxMaxBlobs)
+	slotter := newSlotter(p.chain.Config().BlobScheduleConfig.GetMaxBlobsPerTransaction())
 
 	// See if we need to migrate the queue blob store after fusaka
 	slotter, err = tryMigrate(p.chain.Config(), slotter, queuedir)
@@ -649,7 +649,7 @@ func (p *BlobPool) Init(gasTip uint64, head *types.Header, reserver txpool.Reser
 	}
 	var (
 		basefee = uint256.MustFromBig(eip1559.CalcBaseFee(p.chain.Config(), head))
-		blobfee = uint256.NewInt(params.BlobTxMinBlobGasprice)
+		blobfee = uint256.NewInt(uint64(p.chain.Config().BlobScheduleConfig.GetMinBlobGasPrice()))
 	)
 	if head.ExcessBlobGas != nil {
 		blobfee = uint256.MustFromBig(eip4844.CalcBlobFee(p.chain.Config(), head))
@@ -1084,7 +1084,7 @@ func (p *BlobPool) Reset(oldHead, newHead *types.Header) {
 	// Reset the price heap for the new set of basefee/blobfee pairs
 	var (
 		basefee = uint256.MustFromBig(eip1559.CalcBaseFee(p.chain.Config(), newHead))
-		blobfee = uint256.MustFromBig(big.NewInt(params.BlobTxMinBlobGasprice))
+		blobfee = uint256.NewInt(uint64(p.chain.Config().BlobScheduleConfig.GetMinBlobGasPrice()))
 	)
 	if newHead.ExcessBlobGas != nil {
 		blobfee = uint256.MustFromBig(eip4844.CalcBlobFee(p.chain.Config(), newHead))
@@ -1393,7 +1393,7 @@ func (p *BlobPool) ValidateTxBasics(tx *types.Transaction) error {
 		Accept:       1 << types.BlobTxType,
 		MaxSize:      txMaxSize,
 		MinTip:       p.gasTip.Load().ToBig(),
-		MaxBlobCount: maxBlobsPerTx,
+		MaxBlobCount: p.chain.Config().BlobScheduleConfig.GetMaxBlobsPerTransaction(),
 	}
 	return txpool.ValidateTransaction(tx, p.head.Load(), p.signer, opts)
 }
@@ -2356,7 +2356,7 @@ func (p *BlobPool) Clear() {
 
 	var (
 		basefee = uint256.MustFromBig(eip1559.CalcBaseFee(p.chain.Config(), p.head.Load()))
-		blobfee = uint256.NewInt(params.BlobTxMinBlobGasprice)
+		blobfee = uint256.NewInt(uint64(p.chain.Config().BlobScheduleConfig.GetMinBlobGasPrice()))
 	)
 	p.evict = newPriceHeap(basefee, blobfee, p.index)
 }
