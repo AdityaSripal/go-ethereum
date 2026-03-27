@@ -384,7 +384,7 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 		return 0, ErrWriteProtection
 	}
 
-	if evm.chainRules.IsEIP158 {
+	if evm.chainRules.IsEIP155 {
 		if transfersValue && evm.StateDB.Empty(address) {
 			gas += params.CallNewAccountGas
 		}
