@@ -370,21 +370,21 @@ var (
 var (
 	// DefaultCancunBlobConfig is the default blob configuration for the Cancun fork.
 	DefaultCancunBlobConfig = &BlobConfig{
-		Target:         1,
-		Max:            2,
-		UpdateFraction: 1112826,
+		Target:         3,
+		Max:            6,
+		UpdateFraction: 3338477,
 	}
 	// DefaultPragueBlobConfig is the default blob configuration for the Prague fork.
 	DefaultPragueBlobConfig = &BlobConfig{
-		Target:         1,
-		Max:            2,
-		UpdateFraction: 1112826,
+		Target:         6,
+		Max:            9,
+		UpdateFraction: 5007716,
 	}
 	// DefaultOsakaBlobConfig is the default blob configuration for the Osaka fork.
 	DefaultOsakaBlobConfig = &BlobConfig{
-		Target:         1,
-		Max:            2,
-		UpdateFraction: 1112826,
+		Target:         6,
+		Max:            9,
+		UpdateFraction: 5007716,
 	}
 	// DefaultBPO1BlobConfig is the default blob configuration for the BPO1 fork.
 	DefaultBPO1BlobConfig = &BlobConfig{
@@ -415,6 +415,31 @@ var (
 		Cancun: DefaultCancunBlobConfig,
 		Prague: DefaultPragueBlobConfig,
 		Osaka:  DefaultOsakaBlobConfig,
+	}
+
+	// GnosisCancunBlobConfig is the Gnosis blob configuration for the Cancun fork.
+	GnosisCancunBlobConfig = &BlobConfig{
+		Target:         1,
+		Max:            2,
+		UpdateFraction: 1112826,
+	}
+	// GnosisPragueBlobConfig is the Gnosis blob configuration for the Prague fork.
+	GnosisPragueBlobConfig = &BlobConfig{
+		Target:         1,
+		Max:            2,
+		UpdateFraction: 1112826,
+	}
+	// GnosisOsakaBlobConfig is the Gnosis blob configuration for the Osaka fork.
+	GnosisOsakaBlobConfig = &BlobConfig{
+		Target:         1,
+		Max:            2,
+		UpdateFraction: 1112826,
+	}
+	// GnosisBlobSchedule is the blob schedule for Gnosis chain.
+	GnosisBlobSchedule = &BlobScheduleConfig{
+		Cancun: GnosisCancunBlobConfig,
+		Prague: GnosisPragueBlobConfig,
+		Osaka:  GnosisOsakaBlobConfig,
 	}
 )
 
@@ -736,6 +761,32 @@ type BlobScheduleConfig struct {
 	BPO4      *BlobConfig `json:"bpo4,omitempty"`
 	BPO5      *BlobConfig `json:"bpo5,omitempty"`
 	Amsterdam *BlobConfig `json:"amsterdam,omitempty"`
+
+	// MinBlobGasPrice overrides the global BlobTxMinBlobGasprice for this chain.
+	// If zero/nil, the global default is used.
+	MinBlobGasPrice *uint64 `json:"minBlobGasPrice,omitempty"`
+
+	// MaxBlobsPerTransaction overrides the global BlobTxMaxBlobs for this chain.
+	// If zero/nil, the global default is used.
+	MaxBlobsPerTransaction *int `json:"maxBlobsPerTransaction,omitempty"`
+}
+
+// GetMinBlobGasPrice returns the chain-specific minimum blob gas price,
+// falling back to the global default if not set.
+func (bsc *BlobScheduleConfig) GetMinBlobGasPrice() int64 {
+	if bsc != nil && bsc.MinBlobGasPrice != nil {
+		return int64(*bsc.MinBlobGasPrice)
+	}
+	return int64(DefaultBlobTxMinBlobGasprice)
+}
+
+// GetMaxBlobsPerTransaction returns the chain-specific max blobs per tx,
+// falling back to the global default if not set.
+func (bsc *BlobScheduleConfig) GetMaxBlobsPerTransaction() int {
+	if bsc != nil && bsc.MaxBlobsPerTransaction != nil {
+		return *bsc.MaxBlobsPerTransaction
+	}
+	return DefaultBlobTxMaxBlobs
 }
 
 // IsHomestead returns whether num is either equal to the homestead block or greater.

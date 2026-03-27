@@ -383,7 +383,7 @@ func (st *stateTransition) preCheck() error {
 		if len(msg.BlobHashes) == 0 {
 			return ErrMissingBlobHashes
 		}
-		if isOsaka && len(msg.BlobHashes) > params.BlobTxMaxBlobs {
+		if isOsaka && len(msg.BlobHashes) > st.evm.ChainConfig().BlobScheduleConfig.GetMaxBlobsPerTransaction() {
 			return ErrTooManyBlobs
 		}
 		for i, hash := range msg.BlobHashes {
@@ -572,7 +572,7 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 		// XXX rules.IsLondon shouldn't be necessary
 		// Move the remainder to the eip1559 fee collector
 		if rules.IsLondon {
-			if !msg.IsFree() {
+			if !msg.IsFree() && st.evm.ChainConfig().Aura != nil {
 				burntContractAddress := *st.evm.ChainConfig().Aura.Eip1559FeeCollector
 				burnAmount := new(uint256.Int).Mul(new(uint256.Int).SetUint64(st.gasUsed()), uint256.MustFromBig(st.evm.Context.BaseFee))
 				st.state.AddBalance(burntContractAddress, burnAmount, tracing.BalanceIncreaseRewardTransactionFee)
