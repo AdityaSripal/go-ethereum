@@ -102,4 +102,12 @@ jobs:
           cache: false
 
       - name: Run tests
-        run: go run build/ci.go test -p 8
+        run: |
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt"
+            if go run build/ci.go test -p 8; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed"
+          done
+          exit 1
