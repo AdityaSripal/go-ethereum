@@ -170,7 +170,7 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 // proofs. For proof verification, use validateCells.
 func validateBlobSidecar(tx *types.Transaction, head *types.Header, opts *ValidationOptions) error {
 	// Ensure the blob fee cap satisfies the minimum blob gas price
-	minBlobGasPrice := big.NewInt(opts.Config.BlobScheduleConfig.GetMinBlobGasPrice())
+	minBlobGasPrice := new(big.Int).SetUint64(opts.Config.GetMinBlobGasPrice())
 	if tx.BlobGasFeeCapIntCmp(minBlobGasPrice) < 0 {
 		return fmt.Errorf("%w: blob fee cap %v, minimum needed %v", ErrTxGasPriceTooLow, tx.BlobGasFeeCap(), minBlobGasPrice)
 	}
