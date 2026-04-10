@@ -31,8 +31,8 @@ func (h Header) MarshalJSON() ([]byte, error) {
 		Extra               hexutil.Bytes   `json:"extraData"        gencodec:"required"`
 		MixDigest           common.Hash     `json:"mixHash"`
 		Nonce               BlockNonce      `json:"nonce"`
-		Step                uint64          `json:"step,omitempty"`
-		Signature           []byte          `json:"signature"`
+		Step                hexutil.Uint64  `json:"step,omitempty"`
+		Signature           hexutil.Bytes   `json:"signature,omitempty"`
 		BaseFee             *hexutil.Big    `json:"baseFeePerGas" rlp:"optional"`
 		WithdrawalsHash     *common.Hash    `json:"withdrawalsRoot" rlp:"optional"`
 		BlobGasUsed         *hexutil.Uint64 `json:"blobGasUsed" rlp:"optional"`
@@ -59,7 +59,7 @@ func (h Header) MarshalJSON() ([]byte, error) {
 	enc.Extra = h.Extra
 	enc.MixDigest = h.MixDigest
 	enc.Nonce = h.Nonce
-	enc.Step = h.Step
+	enc.Step = hexutil.Uint64(h.Step)
 	enc.Signature = h.Signature
 	enc.BaseFee = (*hexutil.Big)(h.BaseFee)
 	enc.WithdrawalsHash = h.WithdrawalsHash
@@ -91,8 +91,8 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 		Extra               *hexutil.Bytes  `json:"extraData"        gencodec:"required"`
 		MixDigest           *common.Hash    `json:"mixHash"`
 		Nonce               *BlockNonce     `json:"nonce"`
-		Step                *uint64         `json:"step,omitempty"`
-		Signature           []byte          `json:"signature"`
+		Step                *hexutil.Uint64 `json:"step,omitempty"`
+		Signature           *hexutil.Bytes  `json:"signature,omitempty"`
 		BaseFee             *hexutil.Big    `json:"baseFeePerGas" rlp:"optional"`
 		WithdrawalsHash     *common.Hash    `json:"withdrawalsRoot" rlp:"optional"`
 		BlobGasUsed         *hexutil.Uint64 `json:"blobGasUsed" rlp:"optional"`
@@ -164,10 +164,10 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 		h.Nonce = *dec.Nonce
 	}
 	if dec.Step != nil {
-		h.Step = *dec.Step
+		h.Step = uint64(*dec.Step)
 	}
 	if dec.Signature != nil {
-		h.Signature = dec.Signature
+		h.Signature = *dec.Signature
 	}
 	if dec.BaseFee != nil {
 		h.BaseFee = (*big.Int)(dec.BaseFee)
