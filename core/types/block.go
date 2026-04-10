@@ -62,7 +62,6 @@ func (n *BlockNonce) UnmarshalText(input []byte) error {
 }
 
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
-//go:generate go run ../../rlp/rlpgen -type Header -out gen_header_rlp.go
 
 // Header represents a block header in the Ethereum blockchain.
 type Header struct {
@@ -82,7 +81,7 @@ type Header struct {
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       BlockNonce     `json:"nonce"`
 	Step        uint64         `json:"step,omitempty"`
-	Signature   []byte         `json:"signature"`
+	Signature   []byte         `json:"signature,omitempty"`
 
 	// BaseFee was added by EIP-1559 and is ignored in legacy headers.
 	BaseFee *big.Int `json:"baseFeePerGas" rlp:"optional"`
@@ -122,6 +121,8 @@ type headerMarshaling struct {
 	BlobGasUsed   *hexutil.Uint64
 	ExcessBlobGas *hexutil.Uint64
 	SlotNumber    *hexutil.Uint64
+	Step          hexutil.Uint64
+	Signature     hexutil.Bytes
 }
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
