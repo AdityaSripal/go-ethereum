@@ -19,6 +19,7 @@ package aura
 import (
 	"bytes"
 	"container/list"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -699,7 +700,7 @@ func allHeadersUntil(chain consensus.ChainHeaderReader, from *types.Header, to c
 }
 
 // FinalizeAndAssemble implements consensus.Engine
-func (c *AuRa) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
+func (c *AuRa) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
 	c.Finalize(chain, header, state, body, receipts)
 
 	// Assemble and return the final block for sealing
