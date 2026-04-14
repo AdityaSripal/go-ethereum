@@ -87,6 +87,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		context = NewEVMBlockContext(header, p.chain, nil)
 		signer  = types.MakeSigner(config, header.Number, header.Time)
 		evm     = vm.NewEVM(context, tracingStateDB, config, cfg)
+		usedGas = new(uint64)
 	)
 	defer evm.Release()
 	b, ok := p.chain.Engine().(*beacon.Beacon)
