@@ -171,6 +171,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 		blockHash   = common.Hash{0x13, 0x37}
 		rejectedTxs []*rejectedTx
 		includedTxs types.Transactions
+		gasUsed     = uint64(0)
 		blobGasUsed = uint64(0)
 		receipts    = make(types.Receipts, 0)
 	)

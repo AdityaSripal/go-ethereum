@@ -87,6 +87,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	var (
 		context vm.BlockContext
 		signer  = types.MakeSigner(config, header.Number, header.Time)
+		usedGas = new(uint64)
 	)
 
 	// Apply pre-execution system calls.
