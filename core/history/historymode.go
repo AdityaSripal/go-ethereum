@@ -97,6 +97,10 @@ var staticPrunePoints = map[HistoryMode]map[common.Hash]*PrunePoint{
 			BlockNumber: 1450409,
 			BlockHash:   common.HexToHash("0x229f6b18ca1552f1d5146deceb5387333f40dc6275aebee3f2c5c4ece07d02db"),
 		},
+		params.GnosisGenesisHash: {
+			BlockNumber: 25349537,
+			BlockHash:   common.HexToHash("0x16a2e52277bab1733a915ccf32f9ef570c750920fac880860846022bb6f3a7a9"),
+		},
 	},
 	KeepPostPrague: {
 		params.MainnetGenesisHash: {
@@ -107,10 +111,6 @@ var staticPrunePoints = map[HistoryMode]map[common.Hash]*PrunePoint{
 			BlockNumber: 7836331,
 			BlockHash:   common.HexToHash("0xe6571beb68bf24dbd8a6ba354518996920c55a3f8d8fdca423e391b8ad071f22"),
 		},
-	},
-	params.GnosisGenesisHash: {
-		BlockNumber: 25349537,
-		BlockHash:   common.HexToHash("0x16a2e52277bab1733a915ccf32f9ef570c750920fac880860846022bb6f3a7a9"),
 	},
 }
 
