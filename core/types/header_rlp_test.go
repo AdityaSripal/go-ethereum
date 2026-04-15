@@ -76,7 +76,6 @@ func fillField(field reflect.Value, seed byte) {
 	}
 }
 
-
 // TestHeaderRLPAutoFields uses reflection to populate every Header field,
 // then verifies encode→decode round-trip fidelity. If a new field is added
 // to Header but not to EncodeRLP/DecodeRLP, the decoded header will have a
