@@ -111,6 +111,10 @@ var staticPrunePoints = map[HistoryMode]map[common.Hash]*PrunePoint{
 			BlockNumber: 7836331,
 			BlockHash:   common.HexToHash("0xe6571beb68bf24dbd8a6ba354518996920c55a3f8d8fdca423e391b8ad071f22"),
 		},
+		params.GnosisGenesisHash: {
+			BlockNumber: 39827053,
+			BlockHash:   common.HexToHash("0x61b98c31eac49f3c32e16ae418ffe5aa244eab00d2d41b1b6dc6a2fef74a99ef"),
+		},
 	},
 }
 
