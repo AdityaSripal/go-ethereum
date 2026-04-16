@@ -171,7 +171,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 		blockHash   = common.Hash{0x13, 0x37}
 		rejectedTxs []*rejectedTx
 		includedTxs types.Transactions
-		gasUsed     = uint64(0)
 		blobGasUsed = uint64(0)
 		receipts    = make(types.Receipts, 0)
 	)
@@ -277,7 +276,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 			snapshot = statedb.Snapshot()
 			gp       = gaspool.Snapshot()
 		)
-		receipt, err := core.ApplyTransactionWithEVM(msg, gaspool, statedb, vmContext.BlockNumber, blockHash, pre.Env.Timestamp, tx, &gasUsed, evm, pre.Engine)
+		receipt, err := core.ApplyTransactionWithEVM(msg, gaspool, statedb, vmContext.BlockNumber, blockHash, pre.Env.Timestamp, tx, evm, pre.Engine)
 		if err != nil {
 			statedb.RevertToSnapshot(snapshot)
 			log.Info("rejected tx", "index", i, "hash", tx.Hash(), "from", msg.From, "error", err)
