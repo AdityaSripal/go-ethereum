@@ -118,7 +118,11 @@ func (b *BlockGen) addTx(bc *BlockChain, vmConfig vm.Config, tx *types.Transacti
 		evm          = vm.NewEVM(blockContext, b.statedb, b.cm.config, vmConfig)
 	)
 	b.statedb.SetTxContext(tx.Hash(), len(b.txs))
-	receipt, err := ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx)
+	var engine consensus.Engine
+	if b.engine != nil {
+		engine = b.engine
+	}
+	receipt, err := ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx, engine)
 	if err != nil {
 		panic(err)
 	}
