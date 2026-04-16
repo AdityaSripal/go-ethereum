@@ -102,15 +102,7 @@ jobs:
           cache: false
 
       - name: Run tests
-        run: |
-          for attempt in 1 2 3; do
-            echo "Attempt $attempt"
-            if go run build/ci.go test; then
-              exit 0
-            fi
-            echo "Attempt $attempt failed"
-          done
-          exit 1
+        run: go run build/ci.go test
 
   windows:
     name: Windows ${{ matrix.arch }}
