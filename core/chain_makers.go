@@ -122,7 +122,7 @@ func (b *BlockGen) addTx(bc *BlockChain, vmConfig vm.Config, tx *types.Transacti
 	if b.engine != nil {
 		engine = b.engine
 	}
-	receipt, err := ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx, &b.header.GasUsed, engine)
+	receipt, err := ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx, engine)
 	if err != nil {
 		panic(err)
 	}
