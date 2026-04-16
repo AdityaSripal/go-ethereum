@@ -975,7 +975,6 @@ func (api *API) traceTx(ctx context.Context, tx *types.Transaction, message *cor
 		tracer  *Tracer
 		err     error
 		timeout = defaultTraceTimeout
-		usedGas uint64
 	)
 	if config == nil {
 		config = &TraceConfig{}
