@@ -370,12 +370,8 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 
 // makeEnv creates a new environment for the sealing block.
 func (miner *Miner) makeEnv(parent *types.Header, header *types.Header, coinbase common.Address, witness bool, state *state.StateDB) (*environment, error) {
-	// Retrieve the parent state to execute on top.
-	state, err := miner.chain.StateAtForkBoundary(parent, header)
-	if err != nil {
-		return nil, err
-	}
 	var bundle *stateless.Witness
+	var err error
 	if witness {
 		bundle, err = stateless.NewWitness(header, miner.chain, false)
 		if err != nil {
