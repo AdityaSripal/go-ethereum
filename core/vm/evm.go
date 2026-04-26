@@ -704,6 +704,8 @@ func (evm *EVM) GetVMContext() *tracing.VMContext {
 }
 
 func (evm *EVM) SysCreate(caller common.Address, code []byte, gas uint64, endowment *uint256.Int, contractAddr common.Address) (ret []byte, leftOverGas uint64, err error) {
-	ret, _, leftOverGas, err = evm.create(caller, code, gas, endowment, contractAddr, CREATE, false /* incrementNonce */)
+	var leftOverBudget GasBudget
+	ret, _, leftOverBudget, err = evm.create(caller, code, NewGasBudget(gas), endowment, contractAddr, CREATE, false /* incrementNonce */)
+	leftOverGas = leftOverBudget.RegularGas
 	return
 }

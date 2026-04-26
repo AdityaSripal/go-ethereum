@@ -17,6 +17,7 @@
 package ethash
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -27,12 +28,14 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto/keccak"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 )
 
@@ -524,7 +527,6 @@ func (ethash *Ethash) FinalizeAndAssemble(ctx context.Context, chain consensus.C
 	// Header seems complete, assemble into a block and return
 	return types.NewBlock(header, &types.Body{Transactions: body.Transactions, Uncles: body.Uncles}, receipts, trie.NewStackTrie(nil)), nil
 }
-
 
 // SealHash returns the hash of a block prior to it being sealed.
 func (ethash *Ethash) SealHash(header *types.Header) (hash common.Hash) {
