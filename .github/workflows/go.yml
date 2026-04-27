@@ -123,6 +123,9 @@ jobs:
             mingw-subdir: mingw32
             test: false
     steps:
+      - name: Disable line ending conversion
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
         with:
           submodules: true
