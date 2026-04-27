@@ -107,7 +107,7 @@ jobs:
   windows:
     name: Windows ${{ matrix.arch }}
     needs: lint
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
@@ -143,4 +143,4 @@ jobs:
         shell: cmd
         run: |
           set PATH=%GETH_MINGW%\bin;%PATH%
-          go run build/ci.go test -arch ${{ matrix.arch }} -cc %GETH_CC% -short -p 8
+          go run build/ci.go test -arch ${{ matrix.arch }} -cc %GETH_CC% -short
