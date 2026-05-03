@@ -106,6 +106,7 @@ jobs:
 
   windows:
     name: Windows ${{ matrix.arch }}
+    if: github.repository == 'ethereum/go-ethereum'
     needs: lint
     runs-on: [self-hosted, windows, x64]
     strategy:
