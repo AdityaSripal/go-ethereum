@@ -118,7 +118,7 @@ func (b *BlockGen) addTx(bc *BlockChain, vmConfig vm.Config, tx *types.Transacti
 		evm          = vm.NewEVM(blockContext, b.statedb, b.cm.config, vmConfig)
 	)
 	b.statedb.SetTxContext(tx.Hash(), len(b.txs))
-	receipt, err := ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx)
+	receipt, err := ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx, b.engine)
 	if err != nil {
 		panic(err)
 	}
@@ -392,11 +392,11 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 			misc.ApplyDAOHardFork(statedb)
 		}
 
+		blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
+		blockContext.Random = &common.Hash{} // enable post-merge instruction set
+		evm := vm.NewEVM(blockContext, statedb, cm.config, vm.Config{})
 		if config.IsPrague(b.header.Number, b.header.Time) || config.IsVerkle(b.header.Number, b.header.Time) {
 			// EIP-2935
-			blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
-			blockContext.Random = &common.Hash{} // enable post-merge instruction set
-			evm := vm.NewEVM(blockContext, statedb, cm.config, vm.Config{})
 			ProcessParentBlockHash(b.header.ParentHash, evm)
 		}
 
@@ -412,7 +412,7 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		}
 
 		body := types.Body{Transactions: b.txs, Uncles: b.uncles, Withdrawals: b.withdrawals}
-		block, err := b.engine.FinalizeAndAssemble(context.Background(), cm, b.header, statedb, &body, b.receipts)
+		block, err := b.engine.FinalizeAndAssemble(context.Background(), cm, b.header, statedb, &body, b.receipts, evm)
 		if err != nil {
 			panic(err)
 		}

@@ -792,7 +792,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 			// Thus, we can safely ignore it here
 			continue
 		}
-		if obj.selfDestructed || (deleteEmptyObjects && obj.empty()) {
+		if obj.selfDestructed || (deleteEmptyObjects && obj.empty() && obj.address != params.SystemAddress) {
 			delete(s.stateObjects, obj.address)
 			s.markDelete(addr)
 			// We need to maintain account deletions explicitly (will remain
@@ -1216,7 +1216,7 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNum
 		return nil, fmt.Errorf("commit aborted due to earlier error: %v", s.dbErr)
 	}
 	// Finalize any pending changes and merge everything into the tries
-	s.IntermediateRoot(deleteEmptyObjects)
+	s.IntermediateRoot(false) // TODO double check this is necessary
 
 	// Short circuit if any error occurs within the IntermediateRoot.
 	if s.dbErr != nil {
