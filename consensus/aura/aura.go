@@ -19,7 +19,6 @@ package aura
 import (
 	"bytes"
 	"container/list"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -35,7 +34,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/internal/telemetry"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -48,7 +46,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/slices"
@@ -701,26 +698,6 @@ func allHeadersUntil(chain consensus.ChainHeaderReader, from *types.Header, to c
 		out = append(out, header)
 	}
 	return out
-}
-
-// FinalizeAndAssemble implements consensus.Engine
-func (c *AuRa) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt, evm *vm.EVM) (result *types.Block, err error) {
-	ctx, _, spanEnd := telemetry.StartSpan(ctx, "consensu.aura.FinalizeAndAssemble",
-		telemetry.Int64Attribute("block.number", int64(header.Number.Uint64())),
-		telemetry.Int64Attribute("txs.count", int64(len(body.Transactions))),
-		telemetry.Int64Attribute("withdrawals.count", int64(len(body.Withdrawals))),
-	)
-	defer spanEnd(&err)
-
-	_, _, finalizeSpanEnd := telemetry.StartSpan(ctx, "consensus.aura.Finalize")
-	c.Finalize(chain, header, state, body, receipts, evm)
-	finalizeSpanEnd(nil)
-
-	// Assemble and return the final block for sealing
-	_, _, blockSpanEnd := telemetry.StartSpan(ctx, "consensus.aura.NewBlock")
-	block := types.NewBlock(header, body, receipts, trie.NewStackTrie(nil))
-	blockSpanEnd(nil)
-	return block, nil
 }
 
 // Authorize injects a private key into the consensus engine to mint new blocks
