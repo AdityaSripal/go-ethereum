@@ -134,8 +134,6 @@ func ReadGenesis(db ethdb.Database) (*Genesis, error) {
 
 // SysCreate is a special (system) contract creation methods for genesis constructors.
 func SysCreate(contract common.Address, data []byte, chainConfig *params.ChainConfig, statedb *state.StateDB, header *types.Header) (result []byte, err error) {
-	// REBASE NOTE: upstream switched core.Message Value/GasPrice to *uint256.Int
-	// (commit e1047b9c8). Updated this gnosis-specific helper accordingly.
 	msg := &Message{
 		From:     contract,
 		Nonce:    0,

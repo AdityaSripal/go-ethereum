@@ -480,9 +480,6 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 }
 
 // create creates a new contract using code as deployment code.
-// REBASE NOTE: upstream switched the gas argument/return to vm.GasBudget;
-// the trailing incrementSenderNonce parameter is preserved from gnosis so
-// SysCreate (used for genesis system contracts) can skip nonce bumping.
 func (evm *EVM) create(caller common.Address, code []byte, gas GasBudget, value *uint256.Int, address common.Address, typ OpCode, incrementSenderNonce bool) (ret []byte, createAddress common.Address, leftOverGas GasBudget, err error) {
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, typ, caller, address, code, gas.RegularGas, value.ToBig())
@@ -717,10 +714,6 @@ func (evm *EVM) GetVMContext() *tracing.VMContext {
 	}
 }
 
-// SysCreate is a system-level contract creation used for genesis system
-// contracts. It skips the sender-nonce bump so genesis deployment doesn't
-// move account nonces. Returns regular gas counters to keep the caller
-// API stable (REBASE NOTE: internal create() now uses GasBudget, we wrap).
 func (evm *EVM) SysCreate(caller common.Address, code []byte, gas uint64, endowment *uint256.Int, contractAddr common.Address) (ret []byte, leftOverGas uint64, err error) {
 	budget := NewGasBudget(gas)
 	var remaining GasBudget

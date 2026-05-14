@@ -95,8 +95,6 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	defer evm.Release()
 
 	if b, ok := p.chain.Engine().(*beacon.Beacon); ok {
-		// Wire the AuRa syscall executor so the embedded AuRa engine can
-		// issue system contract calls during block processing.
 		b.SetAuraSyscall(MakeAuraSyscall(tracingStateDB, context, config, cfg))
 
 		// Balancer hack hardfork: rewrite the bytecode at the fork transition
@@ -421,9 +419,7 @@ func onSystemCallStart(tracer *tracing.Hooks, ctx *tracing.VMContext) {
 }
 
 // AssembleBlock finalizes the state and assembles the block with provided
-// body and receipts. The receipts and evm are forwarded to Finalize so AuRa
-// (and the Beacon wrapper) can apply system-contract rewards / withdrawals
-// during block production.
+// body and receipts.
 func AssembleBlock(engine consensus.Engine, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt, evm *vm.EVM) *types.Block {
 	engine.Finalize(chain, header, state, body, receipts, evm)
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))

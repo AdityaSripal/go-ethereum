@@ -420,9 +420,6 @@ func (sim *simulator) processBlock(ctx context.Context, block *simBlock, header,
 		Withdrawals:  *block.BlockOverrides.Withdrawals, // Withdrawal is also sanitized as non-nil
 	}
 	chainHeadReader := &simChainHeadReader{ctx, sim.b}
-
-	// Assemble the block. AssembleBlock requires the EVM so AuRa's Finalize
-	// can execute system-contract rewards/withdrawals during simulation.
 	b := core.AssembleBlock(sim.b.Engine(), chainHeadReader, header, sim.state, blockBody, receipts, evm)
 
 	repairLogs(callResults, b.Hash())

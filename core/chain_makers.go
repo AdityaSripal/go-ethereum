@@ -391,9 +391,6 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 			misc.ApplyDAOHardFork(statedb)
 		}
 
-		// REBASE NOTE: hoisted blockContext/evm out of the IsPrague/IsUBT branch.
-		// AssembleBlock (called below) now requires an EVM because Finalize for
-		// AuRa-based chains performs system-contract calls during block production.
 		blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
 		blockContext.Random = &common.Hash{} // enable post-merge instruction set
 		evm := vm.NewEVM(blockContext, statedb, cm.config, vm.Config{})

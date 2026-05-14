@@ -1184,13 +1184,8 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNum
 	if s.dbErr != nil {
 		return nil, fmt.Errorf("commit aborted due to earlier error: %v", s.dbErr)
 	}
-	// Finalize any pending changes and merge everything into the tries.
-	// REBASE NOTE: gnosis fork pinned the IntermediateRoot here to (false)
-	// regardless of the caller's deleteEmptyObjects flag (with a "TODO double check"
-	// comment). Preserving that behavior while keeping the upstream `root` return
-	// value, which is now required by code below this call. Revisit when the
-	// original gnosis TODO is resolved.
-	root := s.IntermediateRoot(false)
+	// Finalize any pending changes and merge everything into the tries
+	root := s.IntermediateRoot(false) // TODO double check this is necessary
 	_ = deleteEmptyObjects
 
 	// Short circuit if any error occurs within the IntermediateRoot.

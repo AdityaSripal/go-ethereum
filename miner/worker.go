@@ -230,8 +230,7 @@ func (miner *Miner) generateWork(ctx context.Context, genParam *generateParams, 
 		reqHash := types.CalcRequestsHash(requests)
 		work.header.RequestsHash = &reqHash
 	}
-	// Assemble the block for delivery. The EVM is required so AuRa's
-	// Finalize can perform system-contract rewards/withdrawals.
+	// Assemble the block for delivery.
 	_, _, assembleSpanEnd := telemetry.StartSpan(ctx, "miner.AssembleBlock")
 	block := core.AssembleBlock(miner.engine, miner.chain, work.header, work.state, &body, work.receipts, work.evm)
 	assembleSpanEnd(nil)
@@ -302,7 +301,6 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 		}
 	}
 	// Retrieve the parent state to execute on top.
-	// REBASE NOTE: upstream changed BlockChain.StateAt to take a *Header rather than a root hash.
 	state, err := miner.chain.StateAt(parent)
 	if err != nil {
 		return nil, err

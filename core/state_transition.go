@@ -482,9 +482,6 @@ func (st *stateTransition) preCheck() error {
 			}
 			// This will panic if baseFee is nil, but basefee presence is verified
 			// as part of header validation.
-			// REBASE NOTE: kept gnosis's `!msg.IsFree()` short-circuit for
-			// AuRa service transactions, combined with upstream's uint256
-			// CmpBig (GasFeeCap is uint256.Int in v1.17.3).
 			if msg.GasFeeCap.CmpBig(st.evm.Context.BaseFee) < 0 && !msg.IsFree() {
 				return fmt.Errorf("%w: address %v, maxFeePerGas: %s, baseFee: %s", ErrFeeCapTooLow,
 					msg.From.Hex(), msg.GasFeeCap, st.evm.Context.BaseFee)

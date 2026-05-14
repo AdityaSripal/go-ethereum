@@ -274,8 +274,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 			snapshot = statedb.Snapshot()
 			gp       = gaspool.Snapshot()
 		)
-		// ApplyTransactionWithEVM takes a consensus.Engine for AuRa service-transaction
-		// detection. t8n has no real engine wired up, so pass nil (matches e187c5183).
 		receipt, err := core.ApplyTransactionWithEVM(msg, gaspool, statedb, vmContext.BlockNumber, blockHash, pre.Env.Timestamp, tx, evm, nil)
 		if err != nil {
 			statedb.RevertToSnapshot(snapshot)
