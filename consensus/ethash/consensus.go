@@ -527,6 +527,7 @@ func (ethash *Ethash) FinalizeAndAssemble(ctx context.Context, chain consensus.C
 	// Header seems complete, assemble into a block and return
 	return types.NewBlock(header, &types.Body{Transactions: body.Transactions, Uncles: body.Uncles}, receipts, trie.NewStackTrie(nil)), nil
 }
+
 // SealHash returns the hash of a block prior to it being sealed.
 func (ethash *Ethash) SealHash(header *types.Header) (hash common.Hash) {
 	hasher := keccak.NewLegacyKeccak256()

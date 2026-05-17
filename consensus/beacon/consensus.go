@@ -421,7 +421,6 @@ func (beacon *Beacon) FinalizeAndAssemble(ctx context.Context, chain consensus.C
 	return block, nil
 }
 
-
 // Seal generates a new sealing request for the given input block and pushes
 // the result into the given channel.
 //
