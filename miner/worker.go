@@ -289,7 +289,7 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 		}
 	}
 	// Retrieve the parent state to execute on top.
-	state, err := miner.chain.StateAt(parent.Root)
+	state, err := miner.chain.StateAt(parent)
 	if err != nil {
 		return nil, err
 	}
