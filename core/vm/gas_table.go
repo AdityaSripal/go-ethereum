@@ -431,7 +431,7 @@ func gasCallIntrinsic(evm *EVM, contract *Contract, stack *Stack, mem *Memory, m
 	}
 	// Stateful check
 	var stateGas uint64
-	if evm.chainRules.IsEIP158 {
+	if evm.chainRules.IsEIP155 {
 		if transfersValue && evm.StateDB.Empty(address) {
 			stateGas += params.CallNewAccountGas
 		}
