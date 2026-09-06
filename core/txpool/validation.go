@@ -32,7 +32,6 @@ import (
 	"github.com/holiman/uint256"
 )
 
-
 // ValidationOptions define certain differences between transaction validation
 // across the different pools without having to duplicate those checks.
 type ValidationOptions struct {
