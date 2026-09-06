@@ -24,6 +24,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/aura"
+	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -103,6 +105,11 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	if precompileCache != nil {
 		evm.SetPrecompileCache(precompileCache)
 	}
+	// Apply pre-execution system calls.
+	if b, ok := p.chain.Engine().(*beacon.Beacon); ok {
+		b.SetAuraSyscall(MakeAuraSyscall(tracingStateDB, context, p.chain.Config(), cfg))
+		b.AuraPrepare(p.chain, block.Header(), statedb)
+	}
 	// Run the pre-execution system calls
 	blockAccessList.Merge(PreExecution(ctx, block.BeaconRoot(), parent, config, evm, block.Number(), block.Time()))
 
@@ -116,6 +123,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		if err != nil {
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
+		SetServiceTransactionFree(p.chain.Engine(), evm, blockNumber, msg)
 		statedb.SetTxContext(tx.Hash(), i, uint32(i+1))
 		_, _, spanEnd := telemetry.StartSpan(ctx, "core.ApplyTransactionWithEVM",
 			telemetry.StringAttribute("tx.hash", tx.Hash().Hex()),
@@ -141,6 +149,9 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	// (e.g. block rewards).
 	//
 	// TODO(rjl493456442) integrate it into the PostExecution.
+	if b, ok := p.chain.Engine().(*beacon.Beacon); ok {
+		b.SetAuraReceipts(receipts)
+	}
 	p.chain.Engine().Finalize(p.chain, header, tracingStateDB, block.Body(), uint32(len(block.Transactions())+1), blockAccessList)
 
 	return &ProcessResult{
@@ -224,6 +235,7 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 			defer func() { hooks.OnTxEnd(receipt, err) }()
 		}
 	}
+
 	// Apply the transaction to the current state (included in the env).
 	result, err := ApplyMessage(evm, msg, gp)
 	if err != nil {
@@ -242,6 +254,30 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 		statedb.AccessEvents().Merge(evm.AccessEvents)
 	}
 	return MakeReceipt(evm, result, statedb, blockNumber, blockHash, blockTime, tx, gp.CumulativeUsed(), root), bal, nil
+}
+
+// SetServiceTransactionFree marks msg as free of charge if the chain runs
+// AuRa consensus (directly, or wrapped in beacon) post-London and the
+// message's sender is a registered gnosis service-transaction sender.
+//
+// This used to be inline in ApplyTransactionWithEVM, back when that function
+// received the consensus engine as a parameter; upstream dropped that
+// parameter, so callers now apply this at the call site, before invoking
+// ApplyTransactionWithEVM/ApplyTransaction.
+func SetServiceTransactionFree(engine consensus.Engine, evm *vm.EVM, blockNumber *big.Int, msg *Message) {
+	if !evm.ChainConfig().IsLondon(blockNumber) || msg.GasFeeCap.BitLen() != 0 {
+		return
+	}
+	switch e := engine.(type) {
+	case *beacon.Beacon:
+		if a, ok := e.InnerEngine().(*aura.AuRa); ok && a.IsServiceTransaction(msg.From) {
+			msg.SetFree()
+		}
+	case *aura.AuRa:
+		if e.IsServiceTransaction(msg.From) {
+			msg.SetFree()
+		}
+	}
 }
 
 // MakeReceipt generates the receipt object for a transaction given its execution result.
@@ -485,4 +521,17 @@ func AssembleBlock(chain consensus.ChainHeaderReader, header *types.Header, stat
 	balHash := bal.Hash()
 	header.BlockAccessListHash = &balHash
 	return types.NewBlock(header, body, receipts, trie.NewStackTrie(nil)).WithAccessListUnsafe(bal)
+}
+
+func MakeAuraSyscall(statedb vm.StateDB, context vm.BlockContext, chainConfig *params.ChainConfig, vmConfig vm.Config) aura.Syscall {
+	return func(contractaddr common.Address, data []byte) ([]byte, error) {
+		evm := vm.NewEVM(context, statedb, chainConfig, vmConfig)
+		_, gasBudget := systemCallGasBudget(evm)
+		ret, _, err := evm.Call(params.SystemAddress, contractaddr, data, gasBudget, new(uint256.Int))
+		if err != nil {
+			panic(err)
+		}
+		statedb.Finalise(evm.GetRules())
+		return ret, err
+	}
 }

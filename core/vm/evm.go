@@ -599,8 +599,10 @@ func (evm *EVM) create(caller common.Address, code []byte, gas GasBudget, value 
 	// acts inside that account.
 	evm.StateDB.CreateContract(address)
 
-	if evm.chainRules.IsEIP158 {
-		evm.StateDB.SetNonce(address, 1, tracing.NonceChangeNewContract)
+	// On gnosis chains, this is activated as part of SpuriousDragon in
+	// spite of being part of eip 161.
+	if evm.chainRules.IsEIP155 {
+		evm.StateDB.SetNonce(address, 1, tracing.NonceChangeContractCreator)
 	}
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
@@ -787,4 +789,13 @@ func (evm *EVM) GetVMContext() *tracing.VMContext {
 // GetRules returns the chain rules used throughout the EVM execution.
 func (evm *EVM) GetRules() params.Rules {
 	return evm.chainRules
+}
+
+// SysCreate is a special (system) contract creation method used for genesis
+// constructors: it runs code as deployment code and returns the resulting
+// runtime code, without regard for the caller's nonce (genesis alloc entries
+// always set the account's final nonce explicitly after calling this).
+func (evm *EVM) SysCreate(caller common.Address, code []byte, gas uint64, endowment *uint256.Int, contractAddr common.Address) (ret []byte, leftOverGas uint64, err error) {
+	ret, _, result, err := evm.create(caller, code, NewGasBudget(gas, 0), endowment, contractAddr, CREATE)
+	return ret, result.ExecutionGas + result.StateGas, err
 }
