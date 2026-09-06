@@ -1162,6 +1162,8 @@ func (c *ChainConfig) LatestFork(time uint64) forks.Fork {
 		return forks.BPO1
 	case c.IsOsaka(london, time):
 		return forks.Osaka
+	case c.IsBalancer(london, time):
+		return forks.Balancer
 	case c.IsPrague(london, time):
 		return forks.Prague
 	case c.IsCancun(london, time):
@@ -1191,6 +1193,7 @@ func (c *ChainConfig) BlobConfig(fork forks.Fork) *BlobConfig {
 		{forks.BPO3, bsc.BPO3},
 		{forks.BPO2, bsc.BPO2},
 		{forks.BPO1, bsc.BPO1},
+		{forks.Balancer, bsc.Balancer},
 		{forks.Prague, bsc.Prague},
 		{forks.Cancun, bsc.Cancun},
 	}
@@ -1235,6 +1238,8 @@ func (c *ChainConfig) Timestamp(fork forks.Fork) *uint64 {
 		return c.BogotaTime
 	case fork == forks.Amsterdam:
 		return c.AmsterdamTime
+	case fork == forks.Balancer:
+		return c.BalancerTime
 	case fork == forks.BPO5:
 		return c.BPO5Time
 	case fork == forks.BPO4:
