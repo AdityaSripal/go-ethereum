@@ -102,7 +102,7 @@ func (h *ethHandler) Handle(peer *eth.Peer, packet eth.Packet) error {
 		}
 		cells := make([][]kzg4844.Cell, len(outer))
 		for i := range outer {
-			if outer[i].Len() > params.BlobTxMaxBlobs*kzg4844.CellsPerBlob {
+			if outer[i].Len() > params.DefaultBlobTxMaxBlobs*kzg4844.CellsPerBlob {
 				return fmt.Errorf("Cells: cells per tx exceeded the possible maximum")
 			}
 			if cells[i], err = outer[i].Items(); err != nil {
