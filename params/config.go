@@ -34,7 +34,6 @@ var (
 )
 
 func newUint64(val uint64) *uint64 { return &val }
-func newInt(val int) *int          { return &val }
 
 var (
 	MainnetTerminalTotalDifficulty, _     = new(big.Int).SetString("58_750_000_000_000_000_000_000", 0)
@@ -404,10 +403,8 @@ var (
 	}
 	// GnosisBlobSchedule is the blob schedule for Gnosis chain.
 	GnosisBlobSchedule = &BlobScheduleConfig{
-		Cancun:                 GnosisCancunBlobConfig,
-		Prague:                 GnosisPragueBlobConfig,
-		MinBlobGasPrice:        newUint64(GnosisBlobTxMinBlobGasprice),
-		MaxBlobsPerTransaction: newInt(GnosisBlobTxMaxBlobs),
+		Cancun: GnosisCancunBlobConfig,
+		Prague: GnosisPragueBlobConfig,
 	}
 )
 
@@ -487,6 +484,14 @@ type ChainConfig struct {
 	Clique             *CliqueConfig       `json:"clique,omitempty"`
 	BlobScheduleConfig *BlobScheduleConfig `json:"blobSchedule,omitempty"`
 	Aura               *AuRaConfig         `json:"aura,omitempty"`
+
+	// MinBlobGasPrice overrides the default minimum blob gas price for this chain.
+	// If nil, the global default (1 wei) is used.
+	MinBlobGasPrice *uint64 `json:"minBlobGasPrice,omitempty"`
+
+	// MaxBlobsPerTransaction overrides the default max blobs per transaction for this chain.
+	// If nil, the global default (6) is used.
+	MaxBlobsPerTransaction *int `json:"maxBlobsPerTransaction,omitempty"`
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -744,30 +749,22 @@ type BlobScheduleConfig struct {
 	BPO3     *BlobConfig `json:"bpo3,omitempty"`
 	BPO4     *BlobConfig `json:"bpo4,omitempty"`
 	BPO5     *BlobConfig `json:"bpo5,omitempty"`
-
-	// MinBlobGasPrice overrides the global BlobTxMinBlobGasprice for this chain.
-	// If zero/nil, the global default is used.
-	MinBlobGasPrice *uint64 `json:"minBlobGasPrice,omitempty"`
-
-	// MaxBlobsPerTransaction overrides the global BlobTxMaxBlobs for this chain.
-	// If zero/nil, the global default is used.
-	MaxBlobsPerTransaction *int `json:"maxBlobsPerTransaction,omitempty"`
 }
 
 // GetMinBlobGasPrice returns the chain-specific minimum blob gas price,
 // falling back to the global default if not set.
-func (bsc *BlobScheduleConfig) GetMinBlobGasPrice() int64 {
-	if bsc != nil && bsc.MinBlobGasPrice != nil {
-		return int64(*bsc.MinBlobGasPrice)
+func (c *ChainConfig) GetMinBlobGasPrice() uint64 {
+	if c != nil && c.MinBlobGasPrice != nil {
+		return *c.MinBlobGasPrice
 	}
-	return int64(DefaultBlobTxMinBlobGasprice)
+	return DefaultBlobTxMinBlobGasprice
 }
 
 // GetMaxBlobsPerTransaction returns the chain-specific max blobs per tx,
 // falling back to the global default if not set.
-func (bsc *BlobScheduleConfig) GetMaxBlobsPerTransaction() int {
-	if bsc != nil && bsc.MaxBlobsPerTransaction != nil {
-		return *bsc.MaxBlobsPerTransaction
+func (c *ChainConfig) GetMaxBlobsPerTransaction() int {
+	if c != nil && c.MaxBlobsPerTransaction != nil {
+		return *c.MaxBlobsPerTransaction
 	}
 	return DefaultBlobTxMaxBlobs
 }
