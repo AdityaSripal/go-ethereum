@@ -46,7 +46,7 @@ var (
 	// persistentStateIDKey tracks the id of latest stored state(for path-based only).
 	persistentStateIDKey = []byte("LastStateID")
 
-	// lastPivotKey tracks the last pivot block used by fast sync (to reenable on sethead).
+	// lastPivotKey tracks the last pivot block used by snap sync (to reject sethead below it).
 	lastPivotKey = []byte("LastPivot")
 
 	// fastTrieProgressKey tracks the number of trie entries imported during fast sync.
@@ -145,6 +145,9 @@ var (
 	PreimagePrefix = []byte("secure-key-")       // PreimagePrefix + hash -> preimage
 	configPrefix   = []byte("ethereum-config-")  // config prefix for the db
 	genesisPrefix  = []byte("ethereum-genesis-") // genesis state prefix for the db
+
+	EpochPrefix        = []byte("aura-epoch-")
+	PendingEpochPrefix = []byte("aura-pending-epoch-")
 
 	CliqueSnapshotPrefix = []byte("clique-")
 
@@ -464,4 +467,12 @@ func trienodeHistoryIndexBlockKey(addressHash common.Hash, path []byte, blockID 
 // transitionStateKey = transitionStatusKey + hash
 func transitionStateKey(hash common.Hash) []byte {
 	return append(VerkleTransitionStatePrefix, hash.Bytes()...)
+}
+
+func epochKey(key []byte) []byte {
+	return append(EpochPrefix, key...)
+}
+
+func pendingEpochKey(key []byte) []byte {
+	return append(PendingEpochPrefix, key...)
 }

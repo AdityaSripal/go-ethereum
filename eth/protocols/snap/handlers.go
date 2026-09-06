@@ -242,6 +242,7 @@ func ServiceGetStorageRangesQuery(chain *core.BlockChain, req *GetStorageRangesP
 			})
 			// If we've exceeded the request threshold, abort
 			if bytes.Compare(hash[:], limit[:]) >= 0 {
+				abort = true
 				break
 			}
 		}
@@ -308,11 +309,11 @@ func handleStorageRanges(backend Backend, msg Decoder, peer *Peer) error {
 	// Decode.
 	slotLists, err := res.Slots.Items()
 	if err != nil {
-		return fmt.Errorf("AccountRange: invalid accounts list: %v", err)
+		return fmt.Errorf("StorageRanges: invalid storages list: %v", err)
 	}
 	proof, err := res.Proof.Items()
 	if err != nil {
-		return fmt.Errorf("AccountRange: invalid proof: %v", err)
+		return fmt.Errorf("StorageRanges: invalid proof: %v", err)
 	}
 
 	// Ensure the ranges are monotonically increasing
@@ -553,7 +554,6 @@ func handleTrieNodes(backend Backend, msg Decoder, peer *Peer) error {
 	return backend.Handle(peer, &TrieNodesPacket{res.ID, nodes})
 }
 
-// nolint:unused
 func handleGetAccessLists(backend Backend, msg Decoder, peer *Peer) error {
 	var req GetAccessListsPacket
 	if err := msg.Decode(&req); err != nil {
@@ -597,4 +597,16 @@ func ServiceGetAccessListsQuery(chain *core.BlockChain, req *GetAccessListsPacke
 		}
 	}
 	return response
+}
+
+func handleAccessLists(backend Backend, msg Decoder, peer *Peer) error {
+	res := new(AccessListsPacket)
+	if err := msg.Decode(res); err != nil {
+		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
+	tresp := tracker.Response{ID: res.ID, MsgCode: AccessListsMsg, Size: res.AccessLists.Len()}
+	if err := peer.tracker.Fulfil(tresp); err != nil {
+		return fmt.Errorf("BALs: %w", err)
+	}
+	return backend.Handle(peer, res)
 }

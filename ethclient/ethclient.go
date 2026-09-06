@@ -317,9 +317,15 @@ func (ec *Client) TransactionSender(ctx context.Context, tx *types.Transaction, 
 
 // TransactionCount returns the total number of transactions in the given block.
 func (ec *Client) TransactionCount(ctx context.Context, blockHash common.Hash) (uint, error) {
-	var num hexutil.Uint
+	var num *hexutil.Uint
 	err := ec.c.CallContext(ctx, &num, "eth_getBlockTransactionCountByHash", blockHash)
-	return uint(num), err
+	if err != nil {
+		return 0, err
+	}
+	if num == nil {
+		return 0, ethereum.NotFound
+	}
+	return uint(*num), err
 }
 
 // TransactionInBlock returns a single transaction at index in the given block.
@@ -839,6 +845,9 @@ type rpcProgress struct {
 	HealedBytecodeBytes    hexutil.Uint64
 	HealingTrienodes       hexutil.Uint64
 	HealingBytecode        hexutil.Uint64
+	SyncedAccessLists      hexutil.Uint64
+	TotalAccessLists       hexutil.Uint64
+	TrieGenProgress        hexutil.Uint64
 	TxIndexFinishedBlocks  hexutil.Uint64
 	TxIndexRemainingBlocks hexutil.Uint64
 	StateIndexRemaining    hexutil.Uint64
@@ -867,6 +876,9 @@ func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
 		HealedBytecodeBytes:    uint64(p.HealedBytecodeBytes),
 		HealingTrienodes:       uint64(p.HealingTrienodes),
 		HealingBytecode:        uint64(p.HealingBytecode),
+		SyncedAccessLists:      uint64(p.SyncedAccessLists),
+		TotalAccessLists:       uint64(p.TotalAccessLists),
+		TrieGenProgress:        uint64(p.TrieGenProgress),
 		TxIndexFinishedBlocks:  uint64(p.TxIndexFinishedBlocks),
 		TxIndexRemainingBlocks: uint64(p.TxIndexRemainingBlocks),
 		StateIndexRemaining:    uint64(p.StateIndexRemaining),

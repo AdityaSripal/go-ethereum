@@ -66,10 +66,11 @@ func (s *Suite) dialAs(key *ecdsa.PrivateKey) (*Conn, error) {
 		return nil, err
 	}
 	conn.caps = []p2p.Cap{
+		{Name: "eth", Version: 72},
 		{Name: "eth", Version: 70},
 		{Name: "eth", Version: 69},
 	}
-	conn.ourHighestProtoVersion = 70
+	conn.ourHighestProtoVersion = 72
 	return &conn, nil
 }
 
@@ -84,6 +85,32 @@ func (s *Suite) dialSnap() (*Conn, error) {
 	return conn, nil
 }
 
+// dialSnap2 creates a connection advertising snap/2 as the only snap capability.
+// This is used by the snap/2 (EIP-8189) test suite to force the peer to
+// negotiate snap/2 rather than falling back to snap/1.
+func (s *Suite) dialSnap2() (*Conn, error) {
+	conn, err := s.dial()
+	if err != nil {
+		return nil, fmt.Errorf("dial failed: %v", err)
+	}
+	conn.caps = append(conn.caps, p2p.Cap{Name: "snap", Version: 2})
+	conn.ourHighestSnapProtoVersion = 2
+	return conn, nil
+}
+
+// dialEth71 creates a connection advertising eth/71 as the only eth capability.
+// This is used by the eth/71 (EIP-8159) test suite to force the peer to
+// negotiate eth/71 rather than falling back to an earlier eth version.
+func (s *Suite) dialEth71() (*Conn, error) {
+	conn, err := s.dial()
+	if err != nil {
+		return nil, fmt.Errorf("dial failed: %v", err)
+	}
+	conn.caps = []p2p.Cap{{Name: "eth", Version: eth.ETH71}}
+	conn.ourHighestProtoVersion = eth.ETH71
+	return conn, nil
+}
+
 // Conn represents an individual connection with a peer
 type Conn struct {
 	*rlpx.Conn
@@ -93,6 +120,10 @@ type Conn struct {
 	ourHighestProtoVersion     uint
 	ourHighestSnapProtoVersion uint
 	caps                       []p2p.Cap
+
+	// pending holds messages received by readUntil that did not match the
+	// caller's expected type.
+	pending []any
 }
 
 // Read reads a packet from the connection.
@@ -168,11 +199,15 @@ func (c *Conn) ReadEth() (any, error) {
 		case eth.TransactionsMsg:
 			msg = new(eth.TransactionsPacket)
 		case eth.NewPooledTransactionHashesMsg:
-			msg = new(eth.NewPooledTransactionHashesPacket)
+			msg = new(eth.NewPooledTransactionHashesPacket72)
 		case eth.GetPooledTransactionsMsg:
 			msg = new(eth.GetPooledTransactionsPacket)
 		case eth.PooledTransactionsMsg:
 			msg = new(eth.PooledTransactionsPacket)
+		case eth.GetCellsMsg:
+			msg = new(eth.GetCellsRequestPacket)
+		case eth.CellsMsg:
+			msg = new(eth.CellsPacket)
 		default:
 			panic(fmt.Sprintf("unhandled eth msg code %d", code))
 		}
@@ -183,7 +218,10 @@ func (c *Conn) ReadEth() (any, error) {
 	}
 }
 
-// ReadSnap reads a snap/1 response with the given id from the connection.
+// ReadSnap reads a snap protocol response from the connection. It decodes
+// the full message catalog of both snap/1 and snap/2. The caller is
+// expected to only receive codes that were actually valid on the
+// negotiated protocol version.
 func (c *Conn) ReadSnap() (any, error) {
 	c.SetReadDeadline(time.Now().Add(timeout))
 	for {
@@ -215,6 +253,10 @@ func (c *Conn) ReadSnap() (any, error) {
 			msg = new(snap.GetTrieNodesPacket)
 		case snap.TrieNodesMsg:
 			msg = new(snap.TrieNodesPacket)
+		case snap.GetAccessListsMsg:
+			msg = new(snap.GetAccessListsPacket)
+		case snap.AccessListsMsg:
+			msg = new(snap.AccessListsPacket)
 		default:
 			panic(fmt.Errorf("unhandled snap code: %d", code))
 		}

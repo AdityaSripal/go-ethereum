@@ -23,6 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/aura"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
@@ -75,6 +76,7 @@ var Defaults = Config{
 	RPCEVMTimeout:           5 * time.Second,
 	GPO:                     FullNodeGPO,
 	RPCTxFeeCap:             1, // 1 ether
+	EngineMaxReorgDepth:     32,
 	TxSyncDefaultTimeout:    20 * time.Second,
 	TxSyncMaxTimeout:        1 * time.Minute,
 	SlowBlockThreshold:      -1, // Disabled by default; set via --debug.logslowblock flag
@@ -181,8 +183,10 @@ type Config struct {
 	// Generate execution witnesses and self-check against them (testing purpose)
 	StatelessSelfValidation bool
 
-	// Enables tracking of state size
-	EnableStateSizeTracking bool
+	// SnapV2 enables the experimental snap/2 (EIP-8189, BAL-based) sync protocol:
+	// the node advertises snap/2 on the wire and uses the snap/2 state syncer.
+	// It is not safe to enable on public networks yet.
+	SnapV2 bool
 
 	// Enables VM tracing
 	VMTrace           string
@@ -198,8 +202,16 @@ type Config struct {
 	// send-transaction variants. The unit is ether.
 	RPCTxFeeCap float64
 
+	// EngineMaxReorgDepth is the maximum depth the chain head can be rewound
+	// to an already-canonical ancestor by engine API forkchoiceUpdated calls
+	// (0 = no limit).
+	EngineMaxReorgDepth uint64
+
 	// OverrideOsaka (TODO: remove after the fork)
 	OverrideOsaka *uint64 `toml:",omitempty"`
+
+	// OverrideAmsterdam (TODO: remove after the fork)
+	OverrideAmsterdam *uint64 `toml:",omitempty"`
 
 	// OverrideBPO1 (TODO: remove after the fork)
 	OverrideBPO1 *uint64 `toml:",omitempty"`
@@ -229,6 +241,13 @@ func CreateConsensusEngine(config *params.ChainConfig, db ethdb.Database) (conse
 	// Wrap previously supported consensus engines into their post-merge counterpart
 	if config.Clique != nil {
 		return beacon.New(clique.New(config.Clique, db)), nil
+	}
+	if config.Aura != nil {
+		a, err := aura.NewAuRa(config.Aura, db)
+		if err != nil {
+			return nil, err
+		}
+		return beacon.New(a), nil
 	}
 	return beacon.New(ethash.NewFaker()), nil
 }

@@ -160,7 +160,7 @@ func testBlockChainImport(chain types.Blocks, blockchain *BlockChain) error {
 		if err != nil {
 			return err
 		}
-		res, err := blockchain.processor.Process(context.Background(), block, statedb, vm.Config{})
+		res, err := blockchain.processor.Process(context.Background(), block, statedb, nil, nil, vm.Config{}, nil)
 		if err != nil {
 			blockchain.reportBadBlock(block, res, err)
 			return err
@@ -173,7 +173,7 @@ func testBlockChainImport(chain types.Blocks, blockchain *BlockChain) error {
 
 		blockchain.chainmu.MustLock()
 		rawdb.WriteBlock(blockchain.db, block)
-		statedb.Commit(block.NumberU64(), false, false)
+		statedb.Commit(params.Rules{}, block.NumberU64())
 		blockchain.chainmu.Unlock()
 	}
 	return nil
@@ -4129,6 +4129,7 @@ func TestEIP7702(t *testing.T) {
 			},
 		},
 	}
+	gspec.Alloc = withSystemContracts(gspec.Alloc)
 
 	// Sign authorization tuples.
 	// The way the auths are combined, it becomes
@@ -4386,7 +4387,7 @@ func testInsertChainWithCutoff(t *testing.T, cutoff uint64, ancientLimit uint64,
 		if header.Hash() != hash {
 			t.Errorf("block #%d: header mismatch: want: %v, got: %v", num, hash, header.Hash())
 		}
-		tail, err := db.Tail()
+		tail, err := db.Tail(rawdb.ChainFreezerBlockDataGroup)
 		if err != nil {
 			t.Fatalf("Failed to get chain tail, %v", err)
 		}
@@ -4412,9 +4413,9 @@ func testInsertChainWithCutoff(t *testing.T, cutoff uint64, ancientLimit uint64,
 			if receipts == nil || len(receipts) != 1 {
 				t.Fatalf("Missed block receipts: %d, cutoff: %d", num, cutoffBlock.NumberU64())
 			}
-			for indx, receipt := range receipts {
-				receiptByLookup, err := chain.GetCanonicalReceipt(body.Transactions[indx], receipt.BlockHash,
-					receipt.BlockNumber.Uint64(), uint64(indx))
+			for index, receipt := range receipts {
+				receiptByLookup, err := chain.GetCanonicalReceipt(body.Transactions[index], receipt.BlockHash,
+					receipt.BlockNumber.Uint64(), uint64(index))
 				assert.NoError(t, err)
 				assert.Equal(t, receipt, receiptByLookup)
 			}
@@ -4432,7 +4433,7 @@ func TestGetCanonicalReceipt(t *testing.T) {
 		funds   = big.NewInt(1000000000000000000)
 		gspec   = &Genesis{
 			Config:  params.MergedTestChainConfig,
-			Alloc:   types.GenesisAlloc{address: {Balance: funds}},
+			Alloc:   withSystemContracts(types.GenesisAlloc{address: {Balance: funds}}),
 			BaseFee: big.NewInt(params.InitialBaseFee),
 		}
 		signer  = types.LatestSigner(gspec.Config)
@@ -4543,4 +4544,20 @@ func TestSetHeadBeyondRootFinalizedBug(t *testing.T) {
 			currentHead,
 			currentFinal.Number.Uint64())
 	}
+}
+
+// withSystemContracts adds the system contracts the post-shanghai forks issue
+// system calls into to the given alloc. The request-producing ones invalidate
+// the block when empty, so any chain generated on a merged config needs them.
+// Entries the caller set explicitly are left alone.
+func withSystemContracts(alloc types.GenesisAlloc) types.GenesisAlloc {
+	if alloc == nil {
+		alloc = types.GenesisAlloc{}
+	}
+	for addr, account := range SystemContractAllocs() {
+		if _, ok := alloc[addr]; !ok {
+			alloc[addr] = account
+		}
+	}
+	return alloc
 }

@@ -100,6 +100,7 @@ var deprecatedConfigFields = map[string]bool{
 	"ethconfig.Config.LightPeers":              true,
 	"ethconfig.Config.LightNoPrune":            true,
 	"ethconfig.Config.LightNoSyncServe":        true,
+	"ethconfig.Config.EnableStateSizeTracking": true,
 }
 
 type ethstatsConfig struct {
@@ -228,6 +229,10 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 		v := ctx.Uint64(utils.OverrideOsaka.Name)
 		cfg.Eth.OverrideOsaka = &v
 	}
+	if ctx.IsSet(utils.OverrideAmsterdam.Name) {
+		v := ctx.Uint64(utils.OverrideAmsterdam.Name)
+		cfg.Eth.OverrideAmsterdam = &v
+	}
 	if ctx.IsSet(utils.OverrideBPO1.Name) {
 		v := ctx.Uint64(utils.OverrideBPO1.Name)
 		cfg.Eth.OverrideBPO1 = &v
@@ -291,7 +296,7 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 	}
 	utils.RegisterSyncOverrideService(stack, eth, syncConfig)
 
-	if ctx.IsSet(utils.DeveloperFlag.Name) {
+	if ctx.Bool(utils.DeveloperFlag.Name) {
 		// Start dev mode.
 		simBeacon, err := catalyst.NewSimulatedBeacon(ctx.Uint64(utils.DeveloperPeriodFlag.Name), cfg.Eth.Miner.PendingFeeRecipient, eth)
 		if err != nil {
@@ -353,9 +358,6 @@ func dumpConfig(ctx *cli.Context) error {
 func applyMetricConfig(ctx *cli.Context, cfg *gethConfig) {
 	if ctx.IsSet(utils.MetricsEnabledFlag.Name) {
 		cfg.Metrics.Enabled = ctx.Bool(utils.MetricsEnabledFlag.Name)
-	}
-	if ctx.IsSet(utils.MetricsEnabledExpensiveFlag.Name) {
-		log.Warn("Expensive metrics are collected by default, please remove this flag", "flag", utils.MetricsEnabledExpensiveFlag.Name)
 	}
 	if ctx.IsSet(utils.MetricsHTTPFlag.Name) {
 		cfg.Metrics.HTTP = ctx.String(utils.MetricsHTTPFlag.Name)
