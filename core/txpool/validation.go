@@ -32,11 +32,6 @@ import (
 	"github.com/holiman/uint256"
 )
 
-var (
-	// blobTxMinBlobGasPrice is the big.Int version of the configured protocol
-	// parameter to avoid constructing a new big integer for every transaction.
-	blobTxMinBlobGasPrice = big.NewInt(params.BlobTxMinBlobGasprice)
-)
 
 // ValidationOptions define certain differences between transaction validation
 // across the different pools without having to duplicate those checks.
@@ -172,8 +167,9 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 // Note that this doesn't verify the consistency between blobs(cells) and
 // proofs. For proof verification, use validateCells.
 func validateBlobSidecar(tx *types.Transaction, head *types.Header, opts *ValidationOptions) error {
-	if tx.BlobGasFeeCapIntCmp(blobTxMinBlobGasPrice) < 0 {
-		return fmt.Errorf("%w: blob fee cap %v, minimum needed %v", ErrTxGasPriceTooLow, tx.BlobGasFeeCap(), blobTxMinBlobGasPrice)
+	minBlobGasPrice := big.NewInt(opts.Config.BlobScheduleConfig.GetMinBlobGasPrice())
+	if tx.BlobGasFeeCapIntCmp(minBlobGasPrice) < 0 {
+		return fmt.Errorf("%w: blob fee cap %v, minimum needed %v", ErrTxGasPriceTooLow, tx.BlobGasFeeCap(), minBlobGasPrice)
 	}
 	sidecar := tx.BlobTxSidecar()
 	if sidecar == nil {
