@@ -181,6 +181,11 @@ func validateBlobSidecar(tx *types.Transaction, head *types.Header, opts *Valida
 	if len(hashes) > opts.MaxBlobCount {
 		return fmt.Errorf("%w: blob count %v, limit %v", ErrTxBlobLimitExceeded, len(hashes), opts.MaxBlobCount)
 	}
+	// The chain-specific limit (e.g. gnosis) can be stricter than the pool-level
+	// opts.MaxBlobCount checked above.
+	if maxBlobs := opts.Config.GetMaxBlobsPerTransaction(); len(hashes) > maxBlobs {
+		return fmt.Errorf("too many blobs in transaction: have %d, permitted %d", len(hashes), maxBlobs)
+	}
 	if sidecar.Version != types.BlobSidecarVersion1 {
 		return fmt.Errorf("%w: unexpected sidecar version, want: %d, got: %d", ErrSidecarFormatError, types.BlobSidecarVersion1, sidecar.Version)
 	}

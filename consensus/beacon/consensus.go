@@ -464,17 +464,6 @@ func (beacon *Beacon) SetAuraSyscall(sc aura.Syscall) {
 	}
 }
 
-// SetAuraReceipts propagates the receipts generated while processing a
-// block's transactions to the wrapped AuRa engine. AuRa's Finalize needs
-// them for epoch-transition signalling, but upstream's Finalize interface
-// no longer carries receipts, so callers must set them immediately before
-// invoking Finalize.
-func (beacon *Beacon) SetAuraReceipts(receipts []*types.Receipt) {
-	if a, ok := beacon.ethone.(*aura.AuRa); ok {
-		a.SetPendingReceipts(receipts)
-	}
-}
-
 func (beacon *Beacon) AuraPrepare(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) {
 	// mark down if the current chain has merged
 	if a, ok := beacon.ethone.(*aura.AuRa); ok {

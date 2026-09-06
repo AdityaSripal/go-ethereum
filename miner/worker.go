@@ -237,9 +237,6 @@ func (miner *Miner) generateWork(ctx context.Context, genParam *generateParams, 
 	work.bal.Merge(bal)
 
 	// Apply the consensus-specific post-transaction changes
-	if b, ok := miner.engine.(*beacon.Beacon); ok {
-		b.SetAuraReceipts(work.receipts)
-	}
 	miner.engine.Finalize(miner.chain, work.header, work.state, &body, uint32(work.tcount+1), work.bal)
 
 	// Assemble the block for delivery.

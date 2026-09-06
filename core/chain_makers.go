@@ -23,7 +23,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -120,7 +119,12 @@ func (b *BlockGen) addTx(bc *BlockChain, vmConfig vm.Config, tx *types.Transacti
 		evm          = vm.NewEVM(blockContext, b.statedb, b.cm.config, vmConfig)
 	)
 	b.statedb.SetTxContext(tx.Hash(), len(b.txs), uint32(len(b.txs)+1))
-	receipt, bal, err := ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx)
+	msg, err := TransactionToMessage(tx, types.MakeSigner(b.cm.config, b.header.Number, b.header.Time), b.header.BaseFee)
+	if err != nil {
+		panic(err)
+	}
+	SetServiceTransactionFree(b.engine, evm, b.header.Number, msg)
+	receipt, bal, err := ApplyTransactionWithEVM(msg, b.gasPool, b.statedb, b.header.Number, b.header.Hash(), b.header.Time, tx, evm)
 	if err != nil {
 		panic(err)
 	}
@@ -436,9 +440,6 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 			}
 		}
 		// Apply the consensus-specific post-transaction changes
-		if beaconEngine, ok := b.engine.(*beacon.Beacon); ok {
-			beaconEngine.SetAuraReceipts(b.receipts)
-		}
 		b.engine.Finalize(cm, b.header, statedb, &body, uint32(len(b.txs)+1), b.bal)
 
 		// Assemble the block for delivery.
