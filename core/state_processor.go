@@ -108,6 +108,18 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	// Apply pre-execution system calls.
 	if b, ok := p.chain.Engine().(*beacon.Beacon); ok {
 		b.SetAuraSyscall(MakeAuraSyscall(tracingStateDB, context, p.chain.Config(), cfg))
+
+		// Balancer hack hardfork: rewrite the bytecode at the fork transition
+		if config.Aura != nil && config.Aura.BalancerRewriteAddress != nil && config.IsBalancer(block.Number(), block.Time()) {
+			parent := p.chain.GetHeaderByHash(block.ParentHash())
+			if parent == nil {
+				panic("couldn't find parent when trying to apply code rewrite")
+			}
+			// rewrite the code at the transition boundary
+			if !config.IsBalancer(parent.Number, parent.Time) {
+				statedb.SetCode(*config.Aura.BalancerRewriteAddress, config.Aura.BalancerRewriteCode[:], tracing.CodeChangeUnspecified)
+			}
+		}
 		b.AuraPrepare(p.chain, block.Header(), statedb)
 	}
 	// Run the pre-execution system calls
