@@ -113,15 +113,17 @@ jobs:
   windows:
     name: Windows ${{ matrix.arch }}
     needs: lint
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
+            msystem: MINGW64
             mingw: 'C:\msys64\mingw64'
             test: true
           - arch: '386'
+            msystem: MINGW32
             mingw: 'C:\msys64\mingw32'
             test: false
     env:
@@ -137,6 +139,17 @@ jobs:
         with:
           go-version: '1.27'
           cache: false
+
+      # Standard GitHub-hosted windows-latest runners don't ship the
+      # self-hosted image's pre-baked MSYS2/mingw toolchain, so install it.
+      # setup-msys2 installs to C:\msys64 by default, matching the paths
+      # already hardcoded below.
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          install: gcc
+          path-type: inherit
 
       - name: Build
         shell: cmd
