@@ -432,6 +432,10 @@ func (_ValidatorSet *ValidatorSetFilterer) WatchInitiateChange(opts *bind.WatchO
 				// New log arrived, parse the event and forward to the user
 				event := new(ValidatorSetInitiateChange)
 				if err := _ValidatorSet.contract.UnpackLog(event, "InitiateChange", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
