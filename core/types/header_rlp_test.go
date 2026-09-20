@@ -140,6 +140,7 @@ func TestHeaderRLPRoundTripAllForks(t *testing.T) {
 	wh := common.HexToHash("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	pbr := common.HexToHash("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	rh := common.HexToHash("0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+	balh := common.HexToHash("0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
 	blobGasUsed := uint64(131072)
 	excessBlobGas := uint64(262144)
 	slotNumber := uint64(42)
@@ -171,6 +172,15 @@ func TestHeaderRLPRoundTripAllForks(t *testing.T) {
 			h.ParentBeaconRoot = &pbr
 			h.RequestsHash = &rh
 		}},
+		{"EIP-7928 (BlockAccessListHash)", func(h *Header) {
+			h.BaseFee = big.NewInt(1000000000)
+			h.WithdrawalsHash = &wh
+			h.BlobGasUsed = &blobGasUsed
+			h.ExcessBlobGas = &excessBlobGas
+			h.ParentBeaconRoot = &pbr
+			h.RequestsHash = &rh
+			h.BlockAccessListHash = &balh
+		}},
 		{"EIP-7843 (SlotNumber)", func(h *Header) {
 			h.BaseFee = big.NewInt(1000000000)
 			h.WithdrawalsHash = &wh
@@ -178,6 +188,7 @@ func TestHeaderRLPRoundTripAllForks(t *testing.T) {
 			h.ExcessBlobGas = &excessBlobGas
 			h.ParentBeaconRoot = &pbr
 			h.RequestsHash = &rh
+			h.BlockAccessListHash = &balh
 			h.SlotNumber = &slotNumber
 		}},
 	}
