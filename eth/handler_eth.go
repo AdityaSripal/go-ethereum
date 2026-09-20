@@ -110,7 +110,7 @@ func (h *ethHandler) Handle(peer *eth.Peer, packet eth.Packet) error {
 			if n == 0 {
 				continue
 			}
-			if n > params.BlobTxMaxBlobs*kzg4844.CellsPerBlob {
+			if n > params.DefaultBlobTxMaxBlobs*kzg4844.CellsPerBlob {
 				return fmt.Errorf("Cells: cells per tx exceeded the possible maximum")
 			}
 			if count == 0 || n%count != 0 {
