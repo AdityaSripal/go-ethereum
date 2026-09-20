@@ -308,6 +308,26 @@ func (obj *Header) DecodeRLP(s *rlp.Stream) error {
 	obj.RequestsHash = new(common.Hash)
 	obj.RequestsHash.SetBytes(b)
 
+	// BlockAccessListHash
+	if b, err = s.Bytes(); err != nil {
+		if errors.Is(err, rlp.EOL) {
+			obj.BlockAccessListHash = nil
+			if err := s.ListEnd(); err != nil {
+				return fmt.Errorf("close header struct (no BlockAccessListHash): %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("read BlockAccessListHash: %w", err)
+	}
+	if len(b) == 0 {
+		obj.BlockAccessListHash = nil
+	} else if len(b) == 32 {
+		obj.BlockAccessListHash = new(common.Hash)
+		obj.BlockAccessListHash.SetBytes(b)
+	} else {
+		return fmt.Errorf("wrong size for BlockAccessListHash: %d", len(b))
+	}
+
 	// SlotNumber
 	var slotNumber uint64
 	if slotNumber, err = s.Uint64(); err != nil {
