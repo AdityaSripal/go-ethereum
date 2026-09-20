@@ -300,22 +300,7 @@ type AuRa struct {
 
 	Syscall Syscall
 
-	// pendingReceipts holds the receipts of the block currently being
-	// finalized. Upstream's consensus.Engine.Finalize no longer takes
-	// receipts as a parameter (see SetPendingReceipts), but AuRa's epoch-end
-	// signalling needs to inspect them, so callers must set them immediately
-	// before invoking Finalize.
-	pendingReceipts []*types.Receipt
-
 	isPos bool
-}
-
-// SetPendingReceipts records the receipts produced while processing the
-// transactions of the block about to be finalized. It must be called by
-// every caller of consensus.Engine.Finalize right before invoking it, since
-// the Finalize interface itself no longer carries receipts.
-func (c *AuRa) SetPendingReceipts(receipts []*types.Receipt) {
-	c.pendingReceipts = receipts
 }
 
 func SortedKeys[K constraints.Ordered, V any](m map[K]V) []K {
@@ -579,11 +564,50 @@ func (c *AuRa) ApplyRewards(header *types.Header, state vm.StateDB) error {
 	return nil
 }
 
+// logsGetter is implemented by *state.StateDB. Finalize receives the more
+// abstract vm.StateDB, which doesn't expose Logs(), so a type assertion
+// against this local interface is used to recover the block's logs when the
+// concrete type permits it (i.e. everywhere except a hooked/tracing state,
+// where epoch-end signal detection below is skipped since that path is a
+// read-only replay and never commits to the real chain).
+type logsGetter interface {
+	Logs() []*types.Log
+}
+
+// receiptsFromLogs reconstructs a types.Receipts slice carrying only the Logs
+// field, grouped and ordered by transaction index, from a flat block-wide log
+// list. This lets signalEpochEnd (which historically received the block's
+// real receipts) keep scanning per-transaction log groups in the same order
+// after upstream removed receipts from the Engine.Finalize signature.
+func receiptsFromLogs(logs []*types.Log) types.Receipts {
+	if len(logs) == 0 {
+		return nil
+	}
+	byTx := make(map[uint][]*types.Log)
+	var txIndices []uint
+	for _, l := range logs {
+		if _, ok := byTx[l.TxIndex]; !ok {
+			txIndices = append(txIndices, l.TxIndex)
+		}
+		byTx[l.TxIndex] = append(byTx[l.TxIndex], l)
+	}
+	sort.Slice(txIndices, func(i, j int) bool { return txIndices[i] < txIndices[j] })
+	receipts := make(types.Receipts, 0, len(txIndices))
+	for _, idx := range txIndices {
+		receipts = append(receipts, &types.Receipt{Logs: byTx[idx]})
+	}
+	return receipts
+}
+
 // word `signal epoch` == word `pending epoch`
 func (c *AuRa) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body, blockAccessIndex uint32, bal *bal.ConstructionBlockAccessList) {
-	receipts := c.pendingReceipts
 	if err := c.ApplyRewards(header, state); err != nil {
 		panic(err)
+	}
+
+	var receipts types.Receipts
+	if lg, ok := state.(logsGetter); ok {
+		receipts = receiptsFromLogs(lg.Logs())
 	}
 
 	// check_and_lock_block -> check_epoch_end_signal (after enact)

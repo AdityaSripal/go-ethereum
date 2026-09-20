@@ -169,9 +169,6 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 
 	// Finalize the block, applying any consensus engine specific extras
 	// (e.g. block rewards).
-	if b, ok := p.chain.Engine().(*beacon.Beacon); ok {
-		b.SetAuraReceipts(receipts)
-	}
 	p.chain.Engine().Finalize(p.chain, header, tracingStateDB, block.Body())
 
 	// The access list is final, let the pipeline encode it while the block is
@@ -612,8 +609,7 @@ func AssembleBlock(chain consensus.ChainHeaderReader, header *types.Header, stat
 func MakeAuraSyscall(statedb vm.StateDB, context vm.BlockContext, chainConfig *params.ChainConfig, vmConfig vm.Config) aura.Syscall {
 	return func(contractaddr common.Address, data []byte) ([]byte, error) {
 		evm := vm.NewEVM(context, statedb, chainConfig, vmConfig)
-		_, gasBudget := systemCallGasBudget(evm)
-		ret, _, err := evm.Call(params.SystemAddress, contractaddr, data, gasBudget, new(uint256.Int))
+		ret, _, err := evm.Call(params.SystemAddress, contractaddr, data, vm.NewGasBudget(math.MaxUint64, 0), new(uint256.Int))
 		if err != nil {
 			panic(err)
 		}

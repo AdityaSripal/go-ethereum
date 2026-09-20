@@ -212,6 +212,11 @@ func createBlobTx(key *ecdsa.PrivateKey, config *params.ChainConfig, blobCount i
 		hashes = append(hashes, kzg4844.CalcBlobHashV1(sha256.New(), &commit))
 	}
 	sidecar := types.NewBlobTxSidecar(types.BlobSidecarVersion0, blobs, commitments, proofs)
+	// The pool always requires version-1 sidecars (cell proofs), regardless of
+	// which forks are active, so upgrade before submitting.
+	if err := sidecar.ToV1(); err != nil {
+		panic(err)
+	}
 	blobtx := &types.BlobTx{
 		ChainID:    uint256.MustFromBig(config.ChainID),
 		Nonce:      0,
