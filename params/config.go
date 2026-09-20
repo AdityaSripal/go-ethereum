@@ -34,6 +34,7 @@ var (
 )
 
 func newUint64(val uint64) *uint64 { return &val }
+func newInt(val int) *int          { return &val }
 
 var (
 	GnosisChainTerminalTotalDifficulty, _ = new(big.Int).SetString("8_626_000_110_427_540_000_000_000_000_000_000_000_000_000_000", 0)
@@ -306,8 +307,10 @@ var (
 	}
 	// GnosisBlobSchedule is the blob schedule for Gnosis chain.
 	GnosisBlobSchedule = &BlobScheduleConfig{
-		Cancun: GnosisCancunBlobConfig,
-		Prague: GnosisPragueBlobConfig,
+		Cancun:                 GnosisCancunBlobConfig,
+		Prague:                 GnosisPragueBlobConfig,
+		MinBlobGasPrice:        newUint64(GnosisBlobTxMinBlobGasprice),
+		MaxBlobsPerTransaction: newInt(GnosisBlobTxMaxBlobs),
 	}
 )
 
