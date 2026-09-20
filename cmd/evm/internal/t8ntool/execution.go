@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -53,6 +54,8 @@ type Prestate struct {
 	// AllocPath, when non-empty, causes Apply to stream the alloc from disk
 	// instead of reading Pre, so the full map never materializes in memory.
 	AllocPath string `json:"-"`
+	// Engine is optional; used for aura service tx detection.
+	Engine consensus.Engine `json:"-"`
 }
 
 //go:generate go run github.com/fjl/gencodec -type ExecutionResult -field-override executionResultMarshaling -out gen_execresult.go
@@ -283,6 +286,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 				continue
 			}
 		}
+		core.SetServiceTransactionFree(pre.Engine, evm, vmContext.BlockNumber, msg)
 		statedb.SetTxContext(tx.Hash(), len(receipts), uint32(len(receipts)+1))
 
 		var (
