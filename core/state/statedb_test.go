@@ -1512,8 +1512,9 @@ func TestSystemAddressPreservedOnCommit(t *testing.T) {
 		t.Fatal("SystemAddress should exist before commit")
 	}
 
-	// Commit with EIP-158 active (deleteEmptyObjects = true).
-	rules := params.Rules{IsEIP158: true}
+	// Commit with EIP-158 active (deleteEmptyObjects = true) on an Aura chain,
+	// where SystemAddress preservation is a gnosis-specific invariant.
+	rules := params.Rules{IsEIP158: true, IsAuraChain: true}
 	root, err := state.Commit(rules, 0)
 	if err != nil {
 		t.Fatalf("commit failed: %v", err)
