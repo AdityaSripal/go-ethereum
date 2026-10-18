@@ -23,13 +23,13 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/aura"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
-	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/holiman/uint256"
 )
 
 // Proof-of-stake protocol constants.
@@ -333,26 +333,35 @@ func (beacon *Beacon) verifyHeaders(chain consensus.ChainHeaderReader, headers [
 
 // Prepare implements consensus.Engine, initializing the difficulty field of a
 // header to conform to the beacon protocol. The changes are done inline.
-func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
+func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) error {
 	if !chain.Config().IsPostMerge(header.Number.Uint64(), header.Time) {
-		return beacon.ethone.Prepare(chain, header)
+		return beacon.ethone.Prepare(chain, header, statedb)
 	}
 	header.Difficulty = beaconDifficulty
 	return nil
 }
 
-// Finalize implements consensus.Engine and processes withdrawals on top.
+// Finalize implements consensus.Engine.
 func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
 	if !beacon.IsPoSHeader(header) {
 		beacon.ethone.Finalize(chain, header, state, body)
-		return
 	}
-	// Withdrawals processing.
-	for _, w := range body.Withdrawals {
-		// Convert amount from gwei to wei.
-		amount := new(uint256.Int).SetUint64(w.Amount)
-		amount = amount.Mul(amount, uint256.NewInt(params.GWei))
-		state.AddBalance(w.Address, amount, tracing.BalanceIncreaseWithdrawal)
+
+	// GNOSIS: if the network has merged and this was an ex-AuRa
+	// network, still call the reward contract.
+	if a, ok := beacon.ethone.(*aura.AuRa); ok {
+		if err := a.ApplyRewards(header, state); err != nil {
+			panic(fmt.Sprintf("error applying reward %v", err))
+		}
+	}
+
+	// Withdrawals processing. Non-AuRa withdrawals are credited in core.PostExecution.
+	if auraEngine, ok := beacon.ethone.(*aura.AuRa); ok {
+		if body.Withdrawals != nil {
+			if err := auraEngine.ExecuteSystemWithdrawals(body.Withdrawals); err != nil {
+				panic(err)
+			}
+		}
 	}
 	// No block reward which is issued by consensus layer instead.
 }
@@ -397,6 +406,12 @@ func (beacon *Beacon) Close() error {
 // This function is not suitable for a part of APIs like Prepare or CalcDifficulty
 // because the header difficulty is not set yet.
 func (beacon *Beacon) IsPoSHeader(header *types.Header) bool {
+	// REBASE this should no longer be needed
+	// return header.Difficulty.Cmp(beaconDifficulty) == 0
+	// return header.Number.Cmp(big.NewInt())
+	// non-uint64 block numbers are 2,92271023×10¹² years in
+	// the future, but better be ready.
+	//return !header.Number.IsInt64() || header.Number.Uint64() >= params.GnosisForkBlock || header.Difficulty.Cmp(common.Big0) == 0
 	if header.Difficulty == nil {
 		panic("IsPoSHeader called with invalid difficulty")
 	}
@@ -417,4 +432,18 @@ func (beacon *Beacon) SetThreads(threads int) {
 	if th, ok := beacon.ethone.(threaded); ok {
 		th.SetThreads(threads)
 	}
+}
+
+func (beacon *Beacon) SetAuraSyscall(sc aura.Syscall) {
+	if a, ok := beacon.ethone.(*aura.AuRa); ok {
+		a.Syscall = sc
+	}
+}
+
+func (beacon *Beacon) AuraPrepare(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) {
+	// mark down if the current chain has merged
+	if a, ok := beacon.ethone.(*aura.AuRa); ok {
+		a.SetMerged(beacon.IsPoSHeader(header))
+	}
+	beacon.ethone.Prepare(chain, header, statedb)
 }

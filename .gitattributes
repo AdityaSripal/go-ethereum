@@ -1,3 +1,9 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Auto detect text files and perform LF normalization. All content in
+# this repo is committed as LF; force LF on checkout too (eol=lf)
+# rather than the platform-native default, since several packages
+# (rlp/rlpgen, accounts/abi/bind, Go Example tests' "// Output:"
+# comments, cmd/evm testdata) compare checked-out text byte-for-byte
+# against LF-only generated/expected output. Without this, Windows
+# runners default to CRLF conversion and break those comparisons.
+* text=auto eol=lf
 *.sol linguist-language=Solidity
