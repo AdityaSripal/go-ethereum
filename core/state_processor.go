@@ -221,7 +221,8 @@ func PostExecution(ctx context.Context, config *params.ChainConfig, number *big.
 	rules := config.Rules(number, true, time) // IsMerge is always true
 
 	// Withdrawals are applied before the system calls
-	if rules.IsShanghai {
+	// AuRa withdrawals are executed through the system contract in Finalize
+	if rules.IsShanghai && config.Aura == nil {
 		ProcessWithdrawals(withdrawals, evm, blockAccessIndex, blockAccessList)
 	}
 	// Read requests if Prague is enabled.
