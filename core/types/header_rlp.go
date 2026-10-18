@@ -319,14 +319,11 @@ func (obj *Header) DecodeRLP(s *rlp.Stream) error {
 		}
 		return fmt.Errorf("read BlockAccessListHash: %w", err)
 	}
-	if len(b) == 0 {
-		obj.BlockAccessListHash = nil
-	} else if len(b) == 32 {
-		obj.BlockAccessListHash = new(common.Hash)
-		obj.BlockAccessListHash.SetBytes(b)
-	} else {
+	if len(b) != 32 {
 		return fmt.Errorf("wrong size for BlockAccessListHash: %d", len(b))
 	}
+	obj.BlockAccessListHash = new(common.Hash)
+	obj.BlockAccessListHash.SetBytes(b)
 
 	// SlotNumber
 	var slotNumber uint64

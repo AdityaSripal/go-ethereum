@@ -1363,6 +1363,7 @@ type Rules struct {
 	IsBerlin, IsLondon                                      bool
 	IsMerge, IsShanghai, IsCancun, IsPrague, IsOsaka        bool
 	IsAmsterdam, IsBogota, IsUBT                            bool
+	IsAuraChain                                             bool
 }
 
 // Rules ensures c's ChainID is not nil.
@@ -1391,5 +1392,6 @@ func (c *ChainConfig) Rules(num *big.Int, isMerge bool, timestamp uint64) Rules 
 		IsBogota:         isMerge && c.IsBogota(num, timestamp),
 		IsUBT:            isUBT,
 		IsEIP4762:        isUBT,
+		IsAuraChain:      c.Aura != nil,
 	}
 }
