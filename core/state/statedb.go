@@ -795,7 +795,7 @@ func (s *StateDB) Finalise(rules params.Rules) *bal.ConstructionBlockAccessList 
 			// finalise or delete, so ignore it here.
 			continue
 		}
-		if obj.selfDestructed || (rules.IsEIP158 && obj.empty() && obj.address != params.SystemAddress) {
+		if obj.selfDestructed || (rules.IsEIP158 && obj.empty() && (!rules.IsAuraChain || obj.address != params.SystemAddress)) {
 			delete(s.stateObjects, obj.address)
 			s.markDelete(addr)
 
@@ -891,7 +891,7 @@ func (s *StateDB) finaliseAmsterdam(rules params.Rules) *bal.ConstructionBlockAc
 				}
 			}
 
-		case rules.IsEIP158 && obj.empty() && obj.address != params.SystemAddress:
+		case rules.IsEIP158 && obj.empty() && (!rules.IsAuraChain || obj.address != params.SystemAddress):
 			// EIP-161: a touched, empty account is removed.
 			delete(s.stateObjects, obj.address)
 			s.markDelete(addr)
