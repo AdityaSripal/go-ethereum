@@ -79,10 +79,16 @@ type Backend interface {
 	Handle(peer *Peer, packet Packet) error
 }
 
-// MakeProtocols constructs the P2P protocol definitions for `snap`.
-func MakeProtocols(backend Backend) []p2p.Protocol {
-	protocols := make([]p2p.Protocol, len(ProtocolVersions))
-	for i, version := range ProtocolVersions {
+// MakeProtocols constructs the P2P protocol definitions for `snap`. snap/2 is
+// advertised alongside snap/1 only when advertiseV2 is set; otherwise snap/1
+// alone is offered on the wire.
+func MakeProtocols(backend Backend, advertiseV2 bool) []p2p.Protocol {
+	versions := ProtocolVersions
+	if !advertiseV2 {
+		versions = []uint{SNAP1}
+	}
+	protocols := make([]p2p.Protocol, len(versions))
+	for i, version := range versions {
 		protocols[i] = p2p.Protocol{
 			Name:    ProtocolName,
 			Version: version,
@@ -132,7 +138,6 @@ var snap1 = map[uint64]msgHandler{
 	TrieNodesMsg:        handleTrieNodes,
 }
 
-// nolint:unused
 var snap2 = map[uint64]msgHandler{
 	GetAccountRangeMsg:  handleGetAccountRange,
 	AccountRangeMsg:     handleAccountRange,
@@ -141,7 +146,7 @@ var snap2 = map[uint64]msgHandler{
 	GetByteCodesMsg:     handleGetByteCodes,
 	ByteCodesMsg:        handleByteCodes,
 	GetAccessListsMsg:   handleGetAccessLists,
-	// AccessListsMsg: TODO
+	AccessListsMsg:      handleAccessLists,
 }
 
 // HandleMessage is invoked whenever an inbound message is received from a
@@ -153,17 +158,17 @@ func HandleMessage(backend Backend, peer *Peer) error {
 	if err != nil {
 		return err
 	}
+	defer msg.Discard()
 	if msg.Size > maxMessageSize {
 		return fmt.Errorf("%w: %v > %v", errMsgTooLarge, msg.Size, maxMessageSize)
 	}
-	defer msg.Discard()
 
 	var handlers map[uint64]msgHandler
 	switch peer.version {
 	case SNAP1:
 		handlers = snap1
-	//case SNAP2:
-	//	handlers = snap2
+	case SNAP2:
+		handlers = snap2
 	default:
 		return fmt.Errorf("unknown eth protocol version: %v", peer.version)
 	}
