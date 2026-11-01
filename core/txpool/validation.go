@@ -179,6 +179,9 @@ func validateBlobSidecar(tx *types.Transaction, head *types.Header, opts *Valida
 		return errors.New("missing sidecar in blob transaction")
 	}
 	hashes := tx.BlobHashes()
+	if maxBlobs := opts.Config.GetMaxBlobsPerTransaction(); len(hashes) > maxBlobs {
+		return fmt.Errorf("too many blobs in transaction: have %d, permitted %d", len(hashes), maxBlobs)
+	}
 	if err := sidecar.ValidateBlobCommitmentHashes(hashes); err != nil {
 		return err
 	}

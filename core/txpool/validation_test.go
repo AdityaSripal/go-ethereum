@@ -205,13 +205,13 @@ func createBlobTx(key *ecdsa.PrivateKey, config *params.ChainConfig, blobCount i
 		var blob kzg4844.Blob
 		blob[0] = byte(i + 1) // non-zero so each blob is unique
 		commit, _ := kzg4844.BlobToCommitment(&blob)
-		proof, _ := kzg4844.ComputeBlobProof(&blob, commit)
+		cellProofs, _ := kzg4844.ComputeCellProofs(&blob)
 		blobs = append(blobs, blob)
 		commitments = append(commitments, commit)
-		proofs = append(proofs, proof)
+		proofs = append(proofs, cellProofs...)
 		hashes = append(hashes, kzg4844.CalcBlobHashV1(sha256.New(), &commit))
 	}
-	sidecar := types.NewBlobTxSidecar(types.BlobSidecarVersion0, blobs, commitments, proofs)
+	sidecar := types.NewBlobTxSidecar(types.BlobSidecarVersion1, blobs, commitments, proofs)
 	blobtx := &types.BlobTx{
 		ChainID:    uint256.MustFromBig(config.ChainID),
 		Nonce:      0,
