@@ -302,7 +302,6 @@ var (
 	GnosisBlobSchedule = &BlobScheduleConfig{
 		Cancun: GnosisCancunBlobConfig,
 		Prague: GnosisPragueBlobConfig,
-		Osaka:  GnosisOsakaBlobConfig,
 	}
 )
 

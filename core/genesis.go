@@ -138,9 +138,9 @@ func SysCreate(contract common.Address, data []byte, chainConfig *params.ChainCo
 	msg := &Message{
 		From:     contract,
 		Nonce:    0,
-		Value:    big.NewInt(0),
+		Value:    new(uint256.Int),
 		GasLimit: 30_000_000,
-		GasPrice: big.NewInt(0),
+		GasPrice: new(uint256.Int),
 		// GasFeeCap, GasTipCap,
 		Data:   data,
 		isFree: true,
@@ -155,7 +155,7 @@ func SysCreate(contract common.Address, data []byte, chainConfig *params.ChainCo
 		msg.From,
 		msg.Data,
 		msg.GasLimit,
-		uint256.MustFromBig(msg.Value),
+		msg.Value,
 		contract,
 	)
 	return ret, err

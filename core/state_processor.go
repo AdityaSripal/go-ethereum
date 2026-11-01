@@ -152,6 +152,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		if err != nil {
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
+		SetServiceTransactionFree(p.chain.Engine(), evm, blockNumber, msg)
 		statedb.SetTxContext(tx.Hash(), i, uint32(i+1))
 		receipt, bal, err := applyTransactionWithEVM(ctx, msg, gp, statedb, blockNumber, blockHash, context.Time, tx, evm, eagerBloom)
 		if err != nil {
@@ -306,23 +307,6 @@ func applyTransactionWithEVM(ctx context.Context, msg *Message, gp *GasPool, sta
 		}
 	}
 
-	if evm.ChainConfig().IsLondon(blockNumber) {
-		switch engine := engine.(type) {
-		case *beacon.Beacon:
-			if a, ok := engine.InnerEngine().(*aura.AuRa); ok && msg.GasFeeCap.BitLen() == 0 {
-				if a.IsServiceTransaction(msg.From) {
-					msg.SetFree()
-				}
-			}
-		case *aura.AuRa:
-			if msg.GasFeeCap.BitLen() == 0 {
-				if engine.IsServiceTransaction(msg.From) {
-					msg.SetFree()
-				}
-			}
-		}
-	}
-
 	// Apply the transaction to the current state (included in the env).
 	result, err := ApplyMessage(evm, msg, gp)
 	if err != nil {
@@ -345,6 +329,30 @@ func applyTransactionWithEVM(ctx context.Context, msg *Message, gp *GasPool, sta
 		receipt.Bloom = types.CreateBloom(receipt)
 	}
 	return receipt, bal, nil
+}
+
+// SetServiceTransactionFree marks msg as free of charge if the chain runs
+// AuRa consensus (directly, or wrapped in beacon) post-London and the
+// message's sender is a registered gnosis service-transaction sender.
+//
+// This used to be inline in ApplyTransactionWithEVM, back when that function
+// received the consensus engine as a parameter; upstream dropped that
+// parameter, so callers now apply this at the call site, before invoking
+// ApplyTransactionWithEVM/ApplyTransaction.
+func SetServiceTransactionFree(engine consensus.Engine, evm *vm.EVM, blockNumber *big.Int, msg *Message) {
+	if !evm.ChainConfig().IsLondon(blockNumber) || msg.GasFeeCap.BitLen() != 0 {
+		return
+	}
+	switch e := engine.(type) {
+	case *beacon.Beacon:
+		if a, ok := e.InnerEngine().(*aura.AuRa); ok && a.IsServiceTransaction(msg.From) {
+			msg.SetFree()
+		}
+	case *aura.AuRa:
+		if e.IsServiceTransaction(msg.From) {
+			msg.SetFree()
+		}
+	}
 }
 
 // MakeReceipt generates the receipt object for a transaction given its execution result.
@@ -608,11 +616,11 @@ func AssembleBlock(chain consensus.ChainHeaderReader, header *types.Header, stat
 func MakeAuraSyscall(statedb vm.StateDB, context vm.BlockContext, chainConfig *params.ChainConfig, vmConfig vm.Config) aura.Syscall {
 	return func(contractaddr common.Address, data []byte) ([]byte, error) {
 		evm := vm.NewEVM(context, statedb, chainConfig, vmConfig)
-		ret, _, err := evm.Call(params.SystemAddress, contractaddr, data, math.MaxUint64, new(uint256.Int))
+		ret, _, err := evm.Call(params.SystemAddress, contractaddr, data, vm.NewGasBudget(math.MaxUint64, 0), new(uint256.Int))
 		if err != nil {
 			panic(err)
 		}
-		statedb.Finalise(true)
+		statedb.Finalise(evm.GetRules())
 		return ret, err
 	}
 }

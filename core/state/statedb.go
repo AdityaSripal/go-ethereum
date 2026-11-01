@@ -891,7 +891,7 @@ func (s *StateDB) finaliseAmsterdam(rules params.Rules) *bal.ConstructionBlockAc
 				}
 			}
 
-		case rules.IsEIP158 && obj.empty():
+		case rules.IsEIP158 && obj.empty() && obj.address != params.SystemAddress:
 			// EIP-161: a touched, empty account is removed.
 			delete(s.stateObjects, obj.address)
 			s.markDelete(addr)

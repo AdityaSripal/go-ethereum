@@ -285,6 +285,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 				continue
 			}
 		}
+		core.SetServiceTransactionFree(pre.Engine, evm, vmContext.BlockNumber, msg)
 		statedb.SetTxContext(tx.Hash(), len(receipts), uint32(len(receipts)+1))
 
 		var (

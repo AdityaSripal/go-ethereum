@@ -26,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -110,7 +109,7 @@ func (h *ethHandler) Handle(peer *eth.Peer, packet eth.Packet) error {
 			if n == 0 {
 				continue
 			}
-			if n > params.BlobTxMaxBlobs*kzg4844.CellsPerBlob {
+			if n > h.chain.Config().GetMaxBlobsPerTransaction()*kzg4844.CellsPerBlob {
 				return fmt.Errorf("Cells: cells per tx exceeded the possible maximum")
 			}
 			if count == 0 || n%count != 0 {

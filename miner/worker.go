@@ -467,7 +467,12 @@ func (miner *Miner) applyTransaction(ctx context.Context, env *environment, tx *
 		snap = env.state.Snapshot()
 		gp   = env.gasPool.Snapshot()
 	)
-	receipt, bal, err := core.ApplyTransaction(ctx, env.evm, env.gasPool, env.state, env.header, tx)
+	msg, err := core.TransactionToMessage(tx, env.signer, env.header.BaseFee)
+	if err != nil {
+		return nil, nil, err
+	}
+	core.SetServiceTransactionFree(miner.engine, env.evm, env.header.Number, msg)
+	receipt, bal, err := core.ApplyTransactionWithEVM(ctx, msg, env.gasPool, env.state, env.header.Number, env.header.Hash(), env.header.Time, tx, env.evm)
 	if err != nil {
 		env.state.RevertToSnapshot(snap)
 		env.gasPool.Set(gp)
