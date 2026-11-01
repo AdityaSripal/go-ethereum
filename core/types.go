@@ -33,7 +33,8 @@ type Validator interface {
 	ValidateBody(block *types.Block) error
 
 	// ValidateState validates the given statedb and optionally the process result.
-	ValidateState(block *types.Block, state *state.StateDB, res *ProcessResult, stateless bool) error
+	// The time spent is recorded into the optional stats.
+	ValidateState(block *types.Block, state *state.StateDB, res *ProcessResult, stateless bool, stats *ValidateStats) error
 }
 
 // Prefetcher is an interface for pre-caching transaction signatures and state.
@@ -41,7 +42,7 @@ type Prefetcher interface {
 	// Prefetch processes the state changes according to the Ethereum rules by running
 	// the transaction messages using the statedb, but any changes are discarded. The
 	// only goal is to pre-cache transaction signatures and state trie nodes.
-	Prefetch(block *types.Block, statedb *state.StateDB, cfg vm.Config, interrupt *atomic.Bool)
+	Prefetch(block *types.Block, statedb *state.StateDB, jumpDestCache vm.JumpDestCache, precompileCache *vm.PrecompileCache, cfg vm.Config, interrupt *atomic.Bool, execIndex *atomic.Int64)
 }
 
 // Processor is an interface for processing blocks using a given initial state.
@@ -49,7 +50,8 @@ type Processor interface {
 	// Process processes the state changes according to the Ethereum rules by running
 	// the transaction messages using the statedb and applying any rewards to both
 	// the processor (coinbase) and any included uncles.
-	Process(ctx context.Context, block *types.Block, statedb *state.StateDB, cfg vm.Config) (*ProcessResult, error)
+	// The time spent and the state reads are recorded into the optional stats.
+	Process(ctx context.Context, block *types.Block, statedb *state.StateDB, jumpDestCache vm.JumpDestCache, precompileCache *vm.PrecompileCache, cfg vm.Config, execIndex *atomic.Int64, stats *ProcessStats) (*ProcessResult, error)
 }
 
 // ProcessResult contains the values computed by Process.
@@ -58,4 +60,9 @@ type ProcessResult struct {
 	Requests [][]byte
 	Logs     []*types.Log
 	GasUsed  uint64
+
+	// pipeline digests the receipts and the access list alongside execution
+	// and validation. It is nil for a result assembled elsewhere, and the
+	// validator computes the receipt digests itself in that case.
+	pipeline *digestPipeline
 }

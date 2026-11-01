@@ -18,10 +18,13 @@ package core
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
+	"slices"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -31,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -74,6 +78,7 @@ type Genesis struct {
 	ExcessBlobGas *uint64     `json:"excessBlobGas"` // EIP-4844
 	BlobGasUsed   *uint64     `json:"blobGasUsed"`   // EIP-4844
 	SlotNumber    *uint64     `json:"slotNumber"`    // EIP-7843
+	AuRaSeal      []byte      `json:"auraSeal,omitempty"`
 }
 
 // copy copies the genesis.
@@ -128,6 +133,34 @@ func ReadGenesis(db ethdb.Database) (*Genesis, error) {
 	return &genesis, nil
 }
 
+// SysCreate is a special (system) contract creation methods for genesis constructors.
+func SysCreate(contract common.Address, data []byte, chainConfig *params.ChainConfig, statedb *state.StateDB, header *types.Header) (result []byte, err error) {
+	msg := &Message{
+		From:     contract,
+		Nonce:    0,
+		Value:    new(uint256.Int),
+		GasLimit: 30_000_000,
+		GasPrice: new(uint256.Int),
+		// GasFeeCap, GasTipCap,
+		Data:   data,
+		isFree: true,
+	}
+	vmConfig := vm.Config{}
+	// Create a new context to be used in the EVM environment
+	author := &contract
+	blockContext := NewEVMBlockContext(header, nil, author)
+	evm := vm.NewEVM(blockContext, statedb, chainConfig, vmConfig)
+
+	ret, _, err := evm.SysCreate(
+		msg.From,
+		msg.Data,
+		msg.GasLimit,
+		msg.Value,
+		contract,
+	)
+	return ret, err
+}
+
 // hashAlloc computes the state root according to the genesis specification.
 func hashAlloc(ga *types.GenesisAlloc, isUBT bool) (common.Hash, error) {
 	// If a genesis-time verkle trie is requested, create a trie config
@@ -148,21 +181,42 @@ func hashAlloc(ga *types.GenesisAlloc, isUBT bool) (common.Hash, error) {
 		emptyRoot = types.EmptyBinaryHash
 	}
 	db := rawdb.NewMemoryDatabase()
+
 	statedb, err := state.New(emptyRoot, state.NewDatabase(triedb.NewDatabase(db, config), nil))
 	if err != nil {
 		return common.Hash{}, err
 	}
-	for addr, account := range *ga {
+	keys := make([]string, len(*ga))
+	i := 0
+	for k := range *ga {
+		keys[i] = string(k.Bytes())
+		i++
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		addr := common.BytesToAddress([]byte(key))
+		account := (*ga)[addr]
 		if account.Balance != nil {
 			statedb.AddBalance(addr, uint256.MustFromBig(account.Balance), tracing.BalanceIncreaseGenesisBalance)
 		}
-		statedb.SetCode(addr, account.Code, tracing.CodeChangeGenesis)
-		statedb.SetNonce(addr, account.Nonce, tracing.NonceChangeGenesis)
+		if len(account.Constructor) != 0 {
+			// hardcode chiado since this is the only use case we have for the time being.
+			// things could be cleaner, but it would increase the diff with geth.
+			code, err := SysCreate(addr, account.Constructor, params.ChiadoChainConfig, statedb, &types.Header{Difficulty: big.NewInt(131072), Number: big.NewInt(0)})
+			if err != nil {
+				panic(err)
+			}
+			statedb.SetCode(addr, code, tracing.CodeChangeGenesis)
+			statedb.SetNonce(addr, 1, tracing.NonceChangeGenesis)
+		} else {
+			statedb.SetCode(addr, account.Code, tracing.CodeChangeGenesis)
+			statedb.SetNonce(addr, account.Nonce, tracing.NonceChangeGenesis)
+		}
 		for key, value := range account.Storage {
 			statedb.SetState(addr, key, value)
 		}
 	}
-	return statedb.Commit(0, false, false)
+	return statedb.Commit(params.Rules{}, 0)
 }
 
 // flushAlloc is very similar with hash, but the main difference is all the
@@ -176,14 +230,34 @@ func flushAlloc(ga *types.GenesisAlloc, triedb *triedb.Database, tracer *tracing
 	if err != nil {
 		return common.Hash{}, err
 	}
-	for addr, account := range *ga {
+	keys := make([]string, len(*ga))
+	i := 0
+	for k := range *ga {
+		keys[i] = string(k.Bytes())
+		i++
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		addr := common.BytesToAddress([]byte(key))
+		account := (*ga)[addr]
 		if account.Balance != nil {
 			// This is not actually logged via tracer because OnGenesisBlock
 			// already captures the allocations.
 			statedb.AddBalance(addr, uint256.MustFromBig(account.Balance), tracing.BalanceIncreaseGenesisBalance)
 		}
-		statedb.SetCode(addr, account.Code, tracing.CodeChangeGenesis)
-		statedb.SetNonce(addr, account.Nonce, tracing.NonceChangeGenesis)
+		if len(account.Constructor) != 0 {
+			// hardcode chiado since this is the only use case we have for the time being.
+			// things could be cleaner, but it would increase the diff with geth.
+			code, err := SysCreate(addr, account.Constructor, params.ChiadoChainConfig, statedb, &types.Header{Difficulty: big.NewInt(131072), Number: big.NewInt(0)})
+			if err != nil {
+				panic(err)
+			}
+			statedb.SetCode(addr, code, tracing.CodeChangeGenesis)
+			statedb.SetNonce(addr, 1, tracing.NonceChangeGenesis)
+		} else {
+			statedb.SetCode(addr, account.Code, tracing.CodeChangeGenesis)
+			statedb.SetNonce(addr, account.Nonce, tracing.NonceChangeGenesis)
+		}
 		for key, value := range account.Storage {
 			statedb.SetState(addr, key, value)
 		}
@@ -191,7 +265,7 @@ func flushAlloc(ga *types.GenesisAlloc, triedb *triedb.Database, tracer *tracing
 
 	var root common.Hash
 	if tracer != nil && tracer.OnStateUpdate != nil {
-		r, update, err := statedb.CommitWithUpdate(0, false, false)
+		r, update, err := statedb.CommitWithUpdate(params.Rules{}, 0)
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -202,7 +276,7 @@ func flushAlloc(ga *types.GenesisAlloc, triedb *triedb.Database, tracer *tracing
 		tracer.OnStateUpdate(trUpdate)
 		root = r
 	} else {
-		root, err = statedb.Commit(0, false, false)
+		root, err = statedb.Commit(params.Rules{}, 0)
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -238,10 +312,12 @@ func getGenesisState(db ethdb.Database, blockhash common.Hash) (alloc types.Gene
 		genesis = DefaultGenesisBlock()
 	case params.SepoliaGenesisHash:
 		genesis = DefaultSepoliaGenesisBlock()
-	case params.HoleskyGenesisHash:
-		genesis = DefaultHoleskyGenesisBlock()
 	case params.HoodiGenesisHash:
 		genesis = DefaultHoodiGenesisBlock()
+	case params.GnosisGenesisHash:
+		genesis = DefaultGnosisGenesisBlock()
+	case params.ChiadoGenesisHash:
+		genesis = DefaultChiadoGenesisBlock()
 	}
 	if genesis != nil {
 		return genesis.Alloc, nil
@@ -263,6 +339,7 @@ type genesisSpecMarshaling struct {
 	BaseFee       *math.HexOrDecimal256
 	ExcessBlobGas *math.HexOrDecimal64
 	BlobGasUsed   *math.HexOrDecimal64
+	SlotNumber    *math.HexOrDecimal64
 }
 
 // GenesisMismatchError is raised when trying to overwrite an existing
@@ -277,10 +354,11 @@ func (e *GenesisMismatchError) Error() string {
 
 // ChainOverrides contains the changes to chain config.
 type ChainOverrides struct {
-	OverrideOsaka *uint64
-	OverrideBPO1  *uint64
-	OverrideBPO2  *uint64
-	OverrideUBT   *uint64
+	OverrideOsaka     *uint64
+	OverrideAmsterdam *uint64
+	OverrideBPO1      *uint64
+	OverrideBPO2      *uint64
+	OverrideUBT       *uint64
 }
 
 // apply applies the chain overrides on the supplied chain config.
@@ -290,6 +368,9 @@ func (o *ChainOverrides) apply(cfg *params.ChainConfig) error {
 	}
 	if o.OverrideOsaka != nil {
 		cfg.OsakaTime = o.OverrideOsaka
+	}
+	if o.OverrideAmsterdam != nil {
+		cfg.AmsterdamTime = o.OverrideAmsterdam
 	}
 	if o.OverrideBPO1 != nil {
 		cfg.BPO1Time = o.OverrideBPO1
@@ -459,12 +540,14 @@ func (g *Genesis) chainConfigOrDefault(ghash common.Hash, stored *params.ChainCo
 		return g.Config
 	case ghash == params.MainnetGenesisHash:
 		return params.MainnetChainConfig
-	case ghash == params.HoleskyGenesisHash:
-		return params.HoleskyChainConfig
 	case ghash == params.SepoliaGenesisHash:
 		return params.SepoliaChainConfig
 	case ghash == params.HoodiGenesisHash:
 		return params.HoodiChainConfig
+	case ghash == params.GnosisGenesisHash:
+		return params.GnosisChainConfig
+	case ghash == params.ChiadoGenesisHash:
+		return params.ChiadoChainConfig
 	default:
 		return stored
 	}
@@ -499,7 +582,14 @@ func (g *Genesis) toBlockWithRoot(root common.Hash) *types.Block {
 		Difficulty: g.Difficulty,
 		MixDigest:  g.Mixhash,
 		Coinbase:   g.Coinbase,
+		Signature:  g.AuRaSeal,
 		Root:       root,
+	}
+
+	// If this is an Aura chain but AuRaSeal is not provided or empty,
+	// set it to 65 zero bytes to ensure proper RLP encoding
+	if g.Config != nil && g.Config.Aura != nil && len(head.Signature) == 0 && (g.Config.TerminalTotalDifficulty != nil && g.Config.TerminalTotalDifficulty.Sign() != 0) {
+		head.Signature = make([]byte, 65)
 	}
 	if g.GasLimit == 0 {
 		head.GasLimit = params.GenesisGasLimit
@@ -555,6 +645,7 @@ func (g *Genesis) toBlockWithRoot(root common.Hash) *types.Block {
 			if head.SlotNumber == nil {
 				head.SlotNumber = new(uint64)
 			}
+			head.BlockAccessListHash = &types.EmptyBlockAccessListHash
 		}
 	}
 	return types.NewBlock(head, &types.Body{Withdrawals: withdrawals}, nil, trie.NewStackTrie(nil))
@@ -658,18 +749,6 @@ func DefaultSepoliaGenesisBlock() *Genesis {
 	}
 }
 
-// DefaultHoleskyGenesisBlock returns the Holesky network genesis block.
-func DefaultHoleskyGenesisBlock() *Genesis {
-	return &Genesis{
-		Config:     params.HoleskyChainConfig,
-		Nonce:      0x1234,
-		GasLimit:   0x17d7840,
-		Difficulty: big.NewInt(0x01),
-		Timestamp:  1695902100,
-		Alloc:      decodePrealloc(holeskyAllocData),
-	}
-}
-
 // DefaultHoodiGenesisBlock returns the Hoodi network genesis block.
 func DefaultHoodiGenesisBlock() *Genesis {
 	return &Genesis{
@@ -679,6 +758,71 @@ func DefaultHoodiGenesisBlock() *Genesis {
 		Difficulty: big.NewInt(0x01),
 		Timestamp:  1742212800,
 		Alloc:      decodePrealloc(hoodiAllocData),
+	}
+}
+
+// SystemContractAllocs returns the genesis allocation of the system contracts
+// that the post-shanghai forks issue system calls into.
+func SystemContractAllocs() types.GenesisAlloc {
+	return types.GenesisAlloc{
+		// EIP-4788 - Beacon block root in the EVM
+		params.BeaconRootsAddress: {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
+
+		// EIP-2935 - Historical block hashes from state
+		params.HistoryStorageAddress: {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
+
+		// EIP-7002 / EIP-7251 - Triggerable withdrawals and consolidations
+		params.WithdrawalQueueAddress:    {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
+		params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
+
+		// EIP-8282 - Builder execution requests
+		params.BuilderDepositAddress: {Nonce: 1, Code: params.BuilderDepositCode, Balance: common.Big0},
+		params.BuilderExitAddress:    {Nonce: 1, Code: params.BuilderExitCode, Balance: common.Big0},
+
+		// EIP-7997 - Deterministic deployment factory
+		params.DeterministicFactoryAddress: {Nonce: 1, Code: params.DeterministicFactoryCode, Balance: common.Big0},
+	}
+}
+
+//go:embed allocs
+var allocs embed.FS
+
+func readPrealloc(filename string) GenesisAlloc {
+	f, err := allocs.Open(filename)
+	if err != nil {
+		panic(fmt.Sprintf("Could not open genesis preallocation for %s: %v", filename, err))
+	}
+	defer f.Close()
+	decoder := json.NewDecoder(f)
+	ga := make(GenesisAlloc)
+	err = decoder.Decode(&ga)
+	if err != nil {
+		panic(fmt.Sprintf("Could not parse genesis preallocation for %s: %v", filename, err))
+	}
+	return ga
+}
+
+// DefaultGnosisGenesisBlock returns the Gnosis network genesis block.
+func DefaultGnosisGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.GnosisChainConfig,
+		Timestamp:  0,
+		AuRaSeal:   common.FromHex("0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   0x989680,
+		Difficulty: big.NewInt(0x20000),
+		Alloc:      readPrealloc("allocs/gnosis.json"),
+	}
+}
+
+// DefaultChiadoGenesisBlock returns the Chiado network genesis block.
+func DefaultChiadoGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.ChiadoChainConfig,
+		Timestamp:  0,
+		AuRaSeal:   common.FromHex("0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   0x989680,
+		Difficulty: big.NewInt(0x20000),
+		Alloc:      readPrealloc("allocs/chiado.json"),
 	}
 }
 
@@ -712,13 +856,10 @@ func DeveloperGenesisBlock(gasLimit uint64, faucet *common.Address) *Genesis {
 			common.BytesToAddress([]byte{0x10}):    {Balance: big.NewInt(1)}, // BLSG1MapG1
 			common.BytesToAddress([]byte{0x11}):    {Balance: big.NewInt(1)}, // BLSG2MapG2
 			common.BytesToAddress([]byte{0x1, 00}): {Balance: big.NewInt(1)}, // P256Verify
-			// Pre-deploy system contracts
-			params.BeaconRootsAddress:        {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
-			params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
-			params.WithdrawalQueueAddress:    {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
-			params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
 		},
 	}
+	// Pre-deploy the system contracts the enabled forks call into
+	maps.Copy(genesis.Alloc, SystemContractAllocs())
 	if faucet != nil {
 		genesis.Alloc[*faucet] = types.Account{Balance: new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9))}
 	}
