@@ -1512,7 +1512,7 @@ func TestSystemAddressPreservedOnCommit(t *testing.T) {
 	}
 
 	// Commit with deleteEmptyObjects = true.
-	root, err := state.Commit(0, true, false)
+	root, err := state.Commit(params.Rules{IsEIP158: true}, 0)
 	if err != nil {
 		t.Fatalf("commit failed: %v", err)
 	}
