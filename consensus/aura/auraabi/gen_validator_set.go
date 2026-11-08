@@ -4,9 +4,11 @@
 package auraabi
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,6 +29,8 @@ var (
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 	_ = abi.ConvertType
+	_ = time.Tick
+	_ = context.Background
 )
 
 // ValidatorSetMetaData contains all meta data concerning the ValidatorSet contract.
@@ -428,6 +432,10 @@ func (_ValidatorSet *ValidatorSetFilterer) WatchInitiateChange(opts *bind.WatchO
 				// New log arrived, parse the event and forward to the user
 				event := new(ValidatorSetInitiateChange)
 				if err := _ValidatorSet.contract.UnpackLog(event, "InitiateChange", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
