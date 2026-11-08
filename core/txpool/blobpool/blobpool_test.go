@@ -1321,7 +1321,7 @@ func TestLegacyTxConversion(t *testing.T) {
 	chain := &testBlockChain{
 		config:  params.MainnetChainConfig,
 		basefee: uint256.NewInt(params.InitialBaseFee),
-		blobfee: uint256.NewInt(params.BlobTxMinBlobGasprice),
+		blobfee: uint256.NewInt(params.DefaultBlobTxMinBlobGasprice),
 		statedb: statedb,
 	}
 	pool := New(Config{Datadir: storage}, chain, nil)
@@ -1394,7 +1394,7 @@ func TestLegacyLimboConversion(t *testing.T) {
 	chain := &testBlockChain{
 		config:  params.MainnetChainConfig,
 		basefee: uint256.NewInt(params.InitialBaseFee),
-		blobfee: uint256.NewInt(params.BlobTxMinBlobGasprice),
+		blobfee: uint256.NewInt(params.DefaultBlobTxMinBlobGasprice),
 		statedb: statedb,
 	}
 	pool := New(Config{Datadir: storage}, chain, nil)
@@ -2359,7 +2359,7 @@ func TestGetCells(t *testing.T) {
 	storage := t.TempDir()
 
 	os.MkdirAll(filepath.Join(storage, pendingTransactionStore), 0700)
-	store, _ := billy.Open(billy.Options{Path: filepath.Join(storage, pendingTransactionStore)}, newSlotterEIP7594(params.BlobTxMaxBlobs), nil)
+	store, _ := billy.Open(billy.Options{Path: filepath.Join(storage, pendingTransactionStore)}, newSlotterEIP7594(params.DefaultBlobTxMaxBlobs), nil)
 
 	var (
 		key1, _ = crypto.GenerateKey()
@@ -2383,7 +2383,7 @@ func TestGetCells(t *testing.T) {
 	chain := &testBlockChain{
 		config:  params.MainnetChainConfig,
 		basefee: uint256.NewInt(params.InitialBaseFee),
-		blobfee: uint256.NewInt(params.BlobTxMinBlobGasprice),
+		blobfee: uint256.NewInt(params.DefaultBlobTxMinBlobGasprice),
 		statedb: statedb,
 	}
 	pool := New(Config{Datadir: storage}, chain, nil)
@@ -2474,7 +2474,7 @@ func TestGetCells(t *testing.T) {
 func TestGetRLPCache(t *testing.T) {
 	storage := t.TempDir()
 	os.MkdirAll(filepath.Join(storage, pendingTransactionStore), 0700)
-	store, _ := billy.Open(billy.Options{Path: filepath.Join(storage, pendingTransactionStore)}, newSlotterEIP7594(params.BlobTxMaxBlobs), nil)
+	store, _ := billy.Open(billy.Options{Path: filepath.Join(storage, pendingTransactionStore)}, newSlotterEIP7594(params.DefaultBlobTxMaxBlobs), nil)
 
 	var (
 		key1, _  = crypto.GenerateKey()
@@ -2492,7 +2492,7 @@ func TestGetRLPCache(t *testing.T) {
 	chain := &testBlockChain{
 		config:  params.MainnetChainConfig,
 		basefee: uint256.NewInt(params.InitialBaseFee),
-		blobfee: uint256.NewInt(params.BlobTxMinBlobGasprice),
+		blobfee: uint256.NewInt(params.DefaultBlobTxMinBlobGasprice),
 		statedb: statedb,
 	}
 	pool := New(Config{Datadir: storage}, chain, nil)
