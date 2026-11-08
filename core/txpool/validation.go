@@ -179,14 +179,14 @@ func validateBlobSidecar(tx *types.Transaction, head *types.Header, opts *Valida
 		return errors.New("missing sidecar in blob transaction")
 	}
 	hashes := tx.BlobHashes()
+	if len(hashes) > opts.MaxBlobCount {
+		return fmt.Errorf("%w: blob count %v, limit %v", ErrTxBlobLimitExceeded, len(hashes), opts.MaxBlobCount)
+	}
 	if maxBlobs := opts.Config.GetMaxBlobsPerTransaction(); len(hashes) > maxBlobs {
 		return fmt.Errorf("too many blobs in transaction: have %d, permitted %d", len(hashes), maxBlobs)
 	}
 	if err := sidecar.ValidateBlobCommitmentHashes(hashes); err != nil {
 		return err
-	}
-	if len(hashes) > opts.MaxBlobCount {
-		return fmt.Errorf("%w: blob count %v, limit %v", ErrTxBlobLimitExceeded, len(hashes), opts.MaxBlobCount)
 	}
 	if sidecar.Version != types.BlobSidecarVersion1 {
 		return fmt.Errorf("%w: unexpected sidecar version, want: %d, got: %d", ErrSidecarFormatError, types.BlobSidecarVersion1, sidecar.Version)
