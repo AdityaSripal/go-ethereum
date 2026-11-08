@@ -58,7 +58,7 @@ func fillField(field reflect.Value, seed byte) {
 			if field.Type().Elem().Kind() == reflect.Uint8 { // []byte
 				field.SetBytes([]byte{seed, seed + 1, seed + 2})
 			}
-		case reflect.Ptr:
+		case reflect.Pointer:
 			elem := reflect.New(field.Type().Elem())
 			switch field.Type().Elem() {
 			case reflect.TypeOf(big.Int{}):
