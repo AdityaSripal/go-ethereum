@@ -19,7 +19,6 @@ package aura
 import (
 	"bytes"
 	"container/list"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -46,7 +45,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/slices"
@@ -565,10 +563,50 @@ func (c *AuRa) ApplyRewards(header *types.Header, state vm.StateDB) error {
 	return nil
 }
 
+// logsGetter is implemented by *state.StateDB. Finalize receives the more
+// abstract vm.StateDB, which doesn't expose Logs(), so a type assertion
+// against this local interface is used to recover the block's logs when the
+// concrete type permits it (i.e. everywhere except a hooked/tracing state,
+// where epoch-end signal detection below is skipped since that path is a
+// read-only replay and never commits to the real chain).
+type logsGetter interface {
+	Logs() []*types.Log
+}
+
+// receiptsFromLogs reconstructs a types.Receipts slice carrying only the Logs
+// field, grouped and ordered by transaction index, from a flat block-wide log
+// list. This lets signalEpochEnd (which historically received the block's
+// real receipts) keep scanning per-transaction log groups in the same order
+// after upstream removed receipts from the Engine.Finalize signature.
+func receiptsFromLogs(logs []*types.Log) types.Receipts {
+	if len(logs) == 0 {
+		return nil
+	}
+	byTx := make(map[uint][]*types.Log)
+	var txIndices []uint
+	for _, l := range logs {
+		if _, ok := byTx[l.TxIndex]; !ok {
+			txIndices = append(txIndices, l.TxIndex)
+		}
+		byTx[l.TxIndex] = append(byTx[l.TxIndex], l)
+	}
+	sort.Slice(txIndices, func(i, j int) bool { return txIndices[i] < txIndices[j] })
+	receipts := make(types.Receipts, 0, len(txIndices))
+	for _, idx := range txIndices {
+		receipts = append(receipts, &types.Receipt{Logs: byTx[idx]})
+	}
+	return receipts
+}
+
 // word `signal epoch` == word `pending epoch`
-func (c *AuRa) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body, receipts []*types.Receipt) {
+func (c *AuRa) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
 	if err := c.ApplyRewards(header, state); err != nil {
 		panic(err)
+	}
+
+	var receipts types.Receipts
+	if lg, ok := state.(logsGetter); ok {
+		receipts = receiptsFromLogs(lg.Logs())
 	}
 
 	// check_and_lock_block -> check_epoch_end_signal (after enact)
@@ -699,14 +737,6 @@ func allHeadersUntil(chain consensus.ChainHeaderReader, from *types.Header, to c
 		out = append(out, header)
 	}
 	return out
-}
-
-// FinalizeAndAssemble implements consensus.Engine
-func (c *AuRa) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
-	c.Finalize(chain, header, state, body, receipts)
-
-	// Assemble and return the final block for sealing
-	return types.NewBlock(header, body, receipts, trie.NewStackTrie(nil)), nil
 }
 
 // Authorize injects a private key into the consensus engine to mint new blocks

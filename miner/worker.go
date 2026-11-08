@@ -482,6 +482,7 @@ func (miner *Miner) applyTransaction(ctx context.Context, env *environment, tx *
 		msg, err   = core.TransactionToMessage(tx, env.signer, env.header.BaseFee)
 	)
 	if err == nil {
+		core.SetServiceTransactionFree(miner.engine, env.evm, env.header.Number, msg)
 		receipt, accessList, err = core.ApplyTransactionWithEVM(ctx, msg, env.gasPool, env.state, env.header.Number, common.Hash{}, env.header.Time, tx, env.evm)
 	}
 	if err != nil {
