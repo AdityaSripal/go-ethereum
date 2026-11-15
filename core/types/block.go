@@ -62,8 +62,10 @@ func (n *BlockNonce) UnmarshalText(input []byte) error {
 }
 
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
-//go:generate go run ../../rlp/rlpgen -type Header -out gen_header_rlp.go
 
+// IMPORTANT: RLP encoding/decoding is implemented manually in header_rlp.go to account for conditional encoding of AuRa fields. Do not use code generation tools to edit that file.
+// If Header fields are changed, header_rlp.go must be updated manually to reflect the changes.
+//
 // Header represents a block header in the Ethereum blockchain.
 type Header struct {
 	ParentHash  common.Hash    `json:"parentHash"       gencodec:"required"`
@@ -81,6 +83,8 @@ type Header struct {
 	Extra       []byte         `json:"extraData"        gencodec:"required"`
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       BlockNonce     `json:"nonce"`
+	Step        uint64         `json:"step,omitempty"`
+	Signature   []byte         `json:"signature,omitempty"`
 
 	// BaseFee was added by EIP-1559 and is ignored in legacy headers.
 	BaseFee *big.Int `json:"baseFeePerGas" rlp:"optional"`
@@ -101,7 +105,7 @@ type Header struct {
 	RequestsHash *common.Hash `json:"requestsHash" rlp:"optional"`
 
 	// BlockAccessListHash was added by EIP-7928 and is ignored in legacy headers.
-	BlockAccessListHash *common.Hash `json:"balHash" rlp:"optional"`
+	BlockAccessListHash *common.Hash `json:"blockAccessListHash" rlp:"optional"`
 
 	// SlotNumber was added by EIP-7843 and is ignored in legacy headers.
 	SlotNumber *uint64 `json:"slotNumber" rlp:"optional"`
@@ -120,6 +124,8 @@ type headerMarshaling struct {
 	BlobGasUsed   *hexutil.Uint64
 	ExcessBlobGas *hexutil.Uint64
 	SlotNumber    *hexutil.Uint64
+	Step          hexutil.Uint64
+	Signature     hexutil.Bytes
 }
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
@@ -201,8 +207,8 @@ type Body struct {
 //   - When new body data is attached to the block, a shallow copy of the block is returned.
 //     This ensures block modifications are race-free.
 //
-//   - We do not copy body data on access because it does not affect the caches, and also
-//     because it would be too expensive.
+//   - We do not copy body data on access because it would be too expensive. Callers must
+//     not modify it, as the cached body roots rely on it.
 type Block struct {
 	header       *Header
 	uncles       []*Header
@@ -213,6 +219,12 @@ type Block struct {
 	// caches
 	hash atomic.Pointer[common.Hash]
 	size atomic.Uint64
+
+	// Roots derived from the body. Only NewBlockFromBody sets them, and copies that
+	// keep the same body carry them over. They are only valid if the body has not
+	// been modified since the block was constructed.
+	txHash          *common.Hash
+	withdrawalsHash *common.Hash
 
 	// These fields are used by package eth to track
 	// inter-peer block relay.
@@ -246,47 +258,57 @@ func NewBlock(header *Header, body *Body, receipts []*Receipt, hasher ListHasher
 		uncles      = body.Uncles
 		withdrawals = body.Withdrawals
 	)
+	b.header.DeriveBodyFields(body, receipts, hasher)
 
-	if len(txs) == 0 {
-		b.header.TxHash = EmptyTxsHash
-	} else {
-		b.header.TxHash = DeriveSha(Transactions(txs), hasher)
+	if len(txs) != 0 {
 		b.transactions = make(Transactions, len(txs))
 		copy(b.transactions, txs)
 	}
-
-	if len(receipts) == 0 {
-		b.header.ReceiptHash = EmptyReceiptsHash
-	} else {
-		b.header.ReceiptHash = DeriveSha(Receipts(receipts), hasher)
-		// Receipts must go through MakeReceipt to calculate the receipt's bloom
-		// already. Merge the receipt's bloom together instead of recalculating
-		// everything.
-		b.header.Bloom = MergeBloom(receipts)
-	}
-
-	if len(uncles) == 0 {
-		b.header.UncleHash = EmptyUncleHash
-	} else {
-		b.header.UncleHash = CalcUncleHash(uncles)
+	if len(uncles) != 0 {
 		b.uncles = make([]*Header, len(uncles))
 		for i := range uncles {
 			b.uncles[i] = CopyHeader(uncles[i])
 		}
 	}
-
-	if withdrawals == nil {
-		b.header.WithdrawalsHash = nil
-	} else if len(withdrawals) == 0 {
-		b.header.WithdrawalsHash = &EmptyWithdrawalsHash
-		b.withdrawals = Withdrawals{}
-	} else {
-		hash := DeriveSha(Withdrawals(withdrawals), hasher)
-		b.header.WithdrawalsHash = &hash
+	if withdrawals != nil {
 		b.withdrawals = slices.Clone(withdrawals)
 	}
-
 	return b
+}
+
+// DeriveBodyFields fills the header's body-dependent roots and receipt bloom.
+func (h *Header) DeriveBodyFields(body *Body, receipts []*Receipt, hasher ListHasher) {
+	if body == nil {
+		body = &Body{}
+	}
+	// Calculate the root of transactions
+	if len(body.Transactions) == 0 {
+		h.TxHash = EmptyTxsHash
+	} else {
+		h.TxHash = DeriveSha(Transactions(body.Transactions), hasher)
+	}
+	// Calculate the root of receipts
+	if len(receipts) == 0 {
+		h.ReceiptHash = EmptyReceiptsHash
+	} else {
+		h.ReceiptHash = DeriveSha(Receipts(receipts), hasher)
+		// Receipts must go through MakeReceipt to calculate the receipt's bloom
+		// already. Merge the receipt's bloom together instead of recalculating
+		// everything.
+		h.Bloom = MergeBloom(receipts)
+	}
+	// Calculate the root of uncles
+	h.UncleHash = CalcUncleHash(body.Uncles)
+
+	// Calculate the root of withdrawals
+	if body.Withdrawals == nil {
+		h.WithdrawalsHash = nil
+	} else if len(body.Withdrawals) == 0 {
+		h.WithdrawalsHash = &EmptyWithdrawalsHash
+	} else {
+		hash := DeriveSha(Withdrawals(body.Withdrawals), hasher)
+		h.WithdrawalsHash = &hash
+	}
 }
 
 // CopyHeader creates a deep copy of a block header.
@@ -413,8 +435,9 @@ func (b *Block) BaseFee() *big.Int {
 	return new(big.Int).Set(b.header.BaseFee)
 }
 
-func (b *Block) BeaconRoot() *common.Hash   { return b.header.ParentBeaconRoot }
-func (b *Block) RequestsHash() *common.Hash { return b.header.RequestsHash }
+func (b *Block) BeaconRoot() *common.Hash          { return b.header.ParentBeaconRoot }
+func (b *Block) RequestsHash() *common.Hash        { return b.header.RequestsHash }
+func (b *Block) BlockAccessListHash() *common.Hash { return b.header.BlockAccessListHash }
 
 func (b *Block) ExcessBlobGas() *uint64 {
 	var excessBlobGas *uint64
@@ -449,10 +472,28 @@ func (b *Block) Size() uint64 {
 	if size := b.size.Load(); size > 0 {
 		return size
 	}
-	c := writeCounter(0)
-	rlp.Encode(&c, b)
-	b.size.Store(uint64(c))
-	return uint64(c)
+	size := b.encodedSize()
+	b.size.Store(size)
+	return size
+}
+
+// encodedSize counts the block's encoding using the sizes the transactions
+// already know, instead of encoding them again.
+func (b *Block) encodedSize() uint64 {
+	var txs uint64
+	for _, tx := range b.transactions {
+		if tx.Type() == LegacyTxType {
+			txs += tx.Size()
+		} else {
+			// typed transactions are wrapped in a byte string, whose header
+			// has the same length as a list header
+			txs += rlp.ListSize(tx.Size())
+		}
+	}
+	// Encode the rest with an empty transaction list, then swap in the real one
+	enc, _ := rlp.EncodeToBytes(&extblock{Header: b.header, Uncles: b.uncles, Withdrawals: b.withdrawals})
+	_, content, _, _ := rlp.Split(enc)
+	return rlp.ListSize(uint64(len(content)) - 1 + rlp.ListSize(txs))
 }
 
 // SanityCheck can be used to prevent that unbounded fields are
@@ -497,15 +538,36 @@ func NewBlockWithHeader(header *Header) *Block {
 	return &Block{header: CopyHeader(header)}
 }
 
+// NewBlockFromBody creates a block from the given header and a deep copy of the
+// body, and sets the header's transaction and withdrawal roots from the body.
+// The block remembers the roots, so checking the body against the header later
+// does not hash it again.
+func NewBlockFromBody(header *Header, body Body, hasher ListHasher) *Block {
+	b := NewBlockWithHeader(header).WithBody(body)
+
+	txHash := DeriveSha(b.transactions, hasher)
+	b.header.TxHash, b.txHash = txHash, &txHash
+
+	b.header.WithdrawalsHash = nil
+	if b.withdrawals != nil {
+		withdrawalsHash := DeriveSha(b.withdrawals, hasher)
+		b.header.WithdrawalsHash = &withdrawalsHash
+		b.withdrawalsHash = &withdrawalsHash
+	}
+	return b
+}
+
 // WithSeal returns a new block with the data from b but the header replaced with
 // the sealed one.
 func (b *Block) WithSeal(header *Header) *Block {
 	return &Block{
-		header:       CopyHeader(header),
-		transactions: b.transactions,
-		uncles:       b.uncles,
-		withdrawals:  b.withdrawals,
-		accessList:   b.accessList,
+		header:          CopyHeader(header),
+		transactions:    b.transactions,
+		uncles:          b.uncles,
+		withdrawals:     b.withdrawals,
+		accessList:      b.accessList,
+		txHash:          b.txHash,
+		withdrawalsHash: b.withdrawalsHash,
 	}
 }
 
@@ -515,7 +577,7 @@ func (b *Block) WithBody(body Body) *Block {
 	block := &Block{
 		header:       b.header,
 		transactions: slices.Clone(body.Transactions),
-		uncles:       make([]*Header, len(body.Uncles)),
+		uncles:       slices.Clone(body.Uncles),
 		withdrawals:  slices.Clone(body.Withdrawals),
 		accessList:   b.accessList,
 	}
@@ -535,11 +597,13 @@ func (b *Block) WithAccessList(accessList *bal.BlockAccessList) *Block {
 // if the provided list may be modified by other actors.
 func (b *Block) WithAccessListUnsafe(accessList *bal.BlockAccessList) *Block {
 	return &Block{
-		header:       b.header,
-		transactions: b.transactions,
-		uncles:       b.uncles,
-		withdrawals:  b.withdrawals,
-		accessList:   accessList,
+		header:          b.header,
+		transactions:    b.transactions,
+		uncles:          b.uncles,
+		withdrawals:     b.withdrawals,
+		accessList:      accessList,
+		txHash:          b.txHash,
+		withdrawalsHash: b.withdrawalsHash,
 	}
 }
 
@@ -552,6 +616,26 @@ func (b *Block) Hash() common.Hash {
 	h := b.header.Hash()
 	b.hash.Store(&h)
 	return h
+}
+
+// DeriveTxHash returns the root of the block's transactions. NewBlockFromBody is
+// the only constructor that caches it, and the cached root is only valid if the
+// block has not been mutated since. Blocks without it derive the root with hasher.
+func (b *Block) DeriveTxHash(hasher ListHasher) common.Hash {
+	if b.txHash != nil {
+		return *b.txHash
+	}
+	return DeriveSha(b.transactions, hasher)
+}
+
+// DeriveWithdrawalsHash returns the root of the block's withdrawals. NewBlockFromBody
+// is the only constructor that caches it, and the cached root is only valid if the
+// block has not been mutated since. Blocks without it derive the root with hasher.
+func (b *Block) DeriveWithdrawalsHash(hasher ListHasher) common.Hash {
+	if b.withdrawalsHash != nil {
+		return *b.withdrawalsHash
+	}
+	return DeriveSha(b.withdrawals, hasher)
 }
 
 type Blocks []*Block

@@ -49,9 +49,9 @@ func init() {
 //	  0xc281d19e-0: 1
 //	}
 type fourByteTracer struct {
-	ids               map[string]int // ids aggregates the 4byte ids found
-	interrupt         atomic.Bool    // Atomic flag to signal execution interruption
-	reason            error          // Textual reason for the interruption
+	ids               map[string]int        // ids aggregates the 4byte ids found
+	interrupt         atomic.Bool           // Atomic flag to signal execution interruption
+	reason            atomic.Pointer[error] // Reason for the interruption, populated by Stop
 	chainConfig       *params.ChainConfig
 	activePrecompiles []common.Address // Updated on tx start based on given rules
 }
@@ -66,7 +66,7 @@ func newFourByteTracer(ctx *tracers.Context, cfg json.RawMessage, chainConfig *p
 	return &tracers.Tracer{
 		Hooks: &tracing.Hooks{
 			OnTxStart: t.OnTxStart,
-			OnEnter:   t.OnEnter,
+			OnEnterV2: t.OnEnter,
 		},
 		GetResult: t.GetResult,
 		Stop:      t.Stop,
@@ -96,7 +96,7 @@ func (t *fourByteTracer) OnTxStart(env *tracing.VMContext, tx *types.Transaction
 }
 
 // OnEnter is called when EVM enters a new scope (via call, create or selfdestruct).
-func (t *fourByteTracer) OnEnter(depth int, opcode byte, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
+func (t *fourByteTracer) OnEnter(depth int, opcode byte, from common.Address, to common.Address, input []byte, gas tracing.Gas, value *big.Int) {
 	// Skip if tracing was interrupted
 	if t.interrupt.Load() {
 		return
@@ -124,12 +124,15 @@ func (t *fourByteTracer) GetResult() (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return res, t.reason
+	if p := t.reason.Load(); p != nil {
+		return res, *p
+	}
+	return res, nil
 }
 
 // Stop terminates execution of the tracer at the first opportune moment.
 func (t *fourByteTracer) Stop(err error) {
-	t.reason = err
+	t.reason.Store(&err)
 	t.interrupt.Store(true)
 }
 

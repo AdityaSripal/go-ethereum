@@ -26,16 +26,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-var (
-	minBlobGasPrice = big.NewInt(params.BlobTxMinBlobGasprice)
-)
-
 // BlobConfig contains the parameters for blob-related formulas.
 // These can be adjusted in a fork.
 type BlobConfig struct {
-	Target         int
-	Max            int
-	UpdateFraction uint64
+	Target          int
+	Max             int
+	UpdateFraction  uint64
+	MinBlobGasPrice uint64
 }
 
 func (bc *BlobConfig) maxBlobGas() uint64 {
@@ -44,7 +41,7 @@ func (bc *BlobConfig) maxBlobGas() uint64 {
 
 // blobBaseFee computes the blob fee.
 func (bc *BlobConfig) blobBaseFee(excessBlobGas uint64) *big.Int {
-	return fakeExponential(minBlobGasPrice, new(big.Int).SetUint64(excessBlobGas), new(big.Int).SetUint64(bc.UpdateFraction))
+	return fakeExponential(new(big.Int).SetUint64(bc.MinBlobGasPrice), new(big.Int).SetUint64(excessBlobGas), new(big.Int).SetUint64(bc.UpdateFraction))
 }
 
 // blobPrice returns the price of one blob in Wei.
@@ -73,8 +70,6 @@ func latestBlobConfig(cfg *params.ChainConfig, time uint64) (BlobConfig, error) 
 		bc = s.BPO2
 	case cfg.IsBPO1(london, time) && s.BPO1 != nil:
 		bc = s.BPO1
-	case cfg.IsOsaka(london, time) && s.Osaka != nil:
-		bc = s.Osaka
 	case cfg.IsPrague(london, time) && s.Prague != nil:
 		bc = s.Prague
 	case cfg.IsCancun(london, time) && s.Cancun != nil:
@@ -84,9 +79,10 @@ func latestBlobConfig(cfg *params.ChainConfig, time uint64) (BlobConfig, error) 
 	}
 
 	return BlobConfig{
-		Target:         bc.Target,
-		Max:            bc.Max,
-		UpdateFraction: bc.UpdateFraction,
+		Target:          bc.Target,
+		Max:             bc.Max,
+		UpdateFraction:  bc.UpdateFraction,
+		MinBlobGasPrice: cfg.GetMinBlobGasPrice(),
 	}, nil
 }
 

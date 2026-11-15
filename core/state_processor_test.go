@@ -18,6 +18,7 @@ package core
 
 import (
 	"crypto/ecdsa"
+	"encoding/binary"
 	"math"
 	"math/big"
 	"testing"
@@ -29,7 +30,11 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/keccak"
 	"github.com/ethereum/go-ethereum/params"
@@ -113,7 +118,7 @@ func TestStateProcessorErrors(t *testing.T) {
 			db    = rawdb.NewMemoryDatabase()
 			gspec = &Genesis{
 				Config: config,
-				Alloc: types.GenesisAlloc{
+				Alloc: withSystemContracts(types.GenesisAlloc{
 					common.HexToAddress("0x71562b71999873DB5b286dF957af199Ec94617F7"): types.Account{
 						Balance: big.NewInt(1000000000000000000), // 1 ether
 						Nonce:   0,
@@ -122,7 +127,7 @@ func TestStateProcessorErrors(t *testing.T) {
 						Balance: big.NewInt(1000000000000000000), // 1 ether
 						Nonce:   math.MaxUint64,
 					},
-				},
+				}),
 			}
 			blockchain, _  = NewBlockChain(db, gspec, beacon.New(ethash.NewFaker()), nil)
 			tooBigInitCode = [params.MaxInitCodeSize + 1]byte{}
@@ -330,13 +335,13 @@ func TestStateProcessorErrors(t *testing.T) {
 			db    = rawdb.NewMemoryDatabase()
 			gspec = &Genesis{
 				Config: config,
-				Alloc: types.GenesisAlloc{
+				Alloc: withSystemContracts(types.GenesisAlloc{
 					common.HexToAddress("0x71562b71999873DB5b286dF957af199Ec94617F7"): types.Account{
 						Balance: big.NewInt(1000000000000000000), // 1 ether
 						Nonce:   0,
 						Code:    common.FromHex("0xB0B0FACE"),
 					},
-				},
+				}),
 			}
 			blockchain, _ = NewBlockChain(db, gspec, beacon.New(ethash.NewFaker()), nil)
 		)
@@ -431,4 +436,38 @@ func GenerateBadBlock(parent *types.Block, engine consensus.Engine, txs types.Tr
 		body.Withdrawals = []*types.Withdrawal{}
 	}
 	return types.NewBlock(header, body, receipts, trie.NewStackTrie(nil))
+}
+
+func TestProcessParentBlockHash(t *testing.T) {
+	// This test uses blocks where,
+	// block 1 parent hash is 0x0100....
+	// block 2 parent hash is 0x0200....
+	// etc
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.SetNonce(params.HistoryStorageAddress, 1, tracing.NonceChangeUnspecified)
+	statedb.SetCode(params.HistoryStorageAddress, params.HistoryStorageCode, tracing.CodeChangeUnspecified)
+	// Process n blocks, from 1 .. num
+	var num = 2
+	for i := 1; i <= num; i++ {
+		header := &types.Header{ParentHash: common.Hash{byte(i)}, Number: big.NewInt(int64(i)), Difficulty: new(big.Int)}
+		chainConfig := params.MergedTestChainConfig
+		vmContext := NewEVMBlockContext(header, &BlockChain{chainConfig: chainConfig}, new(common.Address))
+		evm := vm.NewEVM(vmContext, statedb, chainConfig, vm.Config{})
+		ProcessParentBlockHash(header.ParentHash, evm, bal.NewConstructionBlockAccessList())
+	}
+	// Read block hashes for block 0 .. num-1
+	for i := range num {
+		have, want := getContractStoredBlockHash(statedb, uint64(i)), common.Hash{byte(i + 1)}
+		if have != want {
+			t.Errorf("block %d, have parent hash %v, want %v", i, have, want)
+		}
+	}
+}
+
+// getContractStoredBlockHash is a utility method which reads the stored parent blockhash for block 'number'
+func getContractStoredBlockHash(statedb *state.StateDB, number uint64) common.Hash {
+	ringIndex := number % params.HistoryServeWindow
+	var key common.Hash
+	binary.BigEndian.PutUint64(key[24:], ringIndex)
+	return statedb.GetState(params.HistoryStorageAddress, key)
 }

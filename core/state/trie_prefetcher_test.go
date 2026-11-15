@@ -26,7 +26,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/internal/testrand"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
+	"github.com/ethereum/go-ethereum/triedb/pathdb"
 	"github.com/holiman/uint256"
 )
 
@@ -66,12 +68,12 @@ func TestUseAfterTerminate(t *testing.T) {
 	}
 }
 
-func TestVerklePrefetcher(t *testing.T) {
+func TestPBTPrefetcher(t *testing.T) {
 	disk := rawdb.NewMemoryDatabase()
-	db := triedb.NewDatabase(disk, triedb.UBTDefaults)
+	db := triedb.NewDatabase(disk, &triedb.Config{PathDB: pathdb.Defaults, IsPBT: true})
 	sdb := NewDatabase(db, nil)
 
-	state, err := New(types.EmptyRootHash, sdb)
+	state, err := New(types.EmptyBinaryHash, sdb)
 	if err != nil {
 		t.Fatalf("failed to initialize state: %v", err)
 	}
@@ -83,7 +85,7 @@ func TestVerklePrefetcher(t *testing.T) {
 	state.SetBalance(addr, uint256.NewInt(42), tracing.BalanceChangeUnspecified) // Change the account trie
 	state.SetCode(addr, []byte("hello"), tracing.CodeChangeUnspecified)          // Change an external metadata
 	state.SetState(addr, skey, sval)                                             // Change the storage trie
-	root, _ := state.Commit(0, true, false)
+	root, _ := state.Commit(params.Rules{IsEIP158: true}, 0)
 
 	state, _ = New(root, sdb)
 	fetcher := newTriePrefetcher(sdb, root, "", false)

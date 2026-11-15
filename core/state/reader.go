@@ -22,13 +22,10 @@ import (
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/overlay"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/ethereum/go-ethereum/trie/bintrie"
-	"github.com/ethereum/go-ethereum/trie/transitiontrie"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/database"
 )
@@ -241,65 +238,22 @@ func (r *mptTrieReader) Storage(addr common.Address, key common.Hash) (common.Ha
 	return value, nil
 }
 
-// ubtTrieReader implements the StateReader interface, providing functions to access
-// state from the referenced Unified-binary-trie.
+// pbtTrieReader implements the StateReader interface, providing functions to access
+// state from the referenced partitioned binary tree.
 //
-// ubtTrieReader is safe for concurrent read.
-type ubtTrieReader struct {
+// pbtTrieReader is safe for concurrent read.
+type pbtTrieReader struct {
 	root common.Hash      // State root which uniquely represents a state
 	db   *triedb.Database // Database for loading trie
-	tr   Trie             // Referenced unified binary trie
+	tr   Trie             // Referenced partitioned binary tree
 	lock sync.Mutex       // Lock for protecting concurrent read
-}
-
-// newUBTTrieReader constructs a Unified-binary-trie reader of the specific state.
-// An error will be returned if the associated trie specified by root is not existent.
-func newUBTTrieReader(root common.Hash, db *triedb.Database) (*ubtTrieReader, error) {
-	binTrie, binErr := bintrie.NewBinaryTrie(root, db, db.BinTrieGroupDepth())
-	if binErr != nil {
-		return nil, binErr
-	}
-	// Based on the transition status, determine if the overlay
-	// tree needs to be created, or if a single, target tree is
-	// to be picked.
-	var (
-		tr Trie
-		ts = overlay.LoadTransitionState(db.Disk(), root, true)
-	)
-	if ts.InTransition() {
-		mpt, err := trie.NewStateTrie(trie.StateTrieID(ts.BaseRoot), db)
-		if err != nil {
-			return nil, err
-		}
-		tr = transitiontrie.NewTransitionTrie(mpt, binTrie, false)
-	} else {
-		// HACK: Use TransitionTrie with nil base as a wrapper to make BinaryTrie
-		// satisfy the Trie interface. This works around the import cycle between
-		// trie and trie/bintrie packages.
-		//
-		// TODO: In future PRs, refactor the package structure to avoid this hack:
-		// - Option 1: Move common interfaces (Trie, NodeIterator) to a separate
-		//   package that both trie and trie/bintrie can import
-		// - Option 2: Create a factory function in the trie package that returns
-		//   BinaryTrie as a Trie interface without direct import
-		// - Option 3: Move BinaryTrie to the main trie package
-		//
-		// The current approach works but adds unnecessary overhead and complexity
-		// by using TransitionTrie when there's no actual transition happening.
-		tr = transitiontrie.NewTransitionTrie(nil, binTrie, false)
-	}
-	return &ubtTrieReader{
-		root: root,
-		db:   db,
-		tr:   tr,
-	}, nil
 }
 
 // Account implements StateReader, retrieving the account specified by the address.
 //
 // An error will be returned if the trie state is corrupted. A nil account
 // will be returned if it's not existent in the trie.
-func (r *ubtTrieReader) Account(addr common.Address) (*types.StateAccount, error) {
+func (r *pbtTrieReader) Account(addr common.Address) (*types.StateAccount, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -311,7 +265,7 @@ func (r *ubtTrieReader) Account(addr common.Address) (*types.StateAccount, error
 //
 // An error will be returned if the trie state is corrupted. An empty storage
 // slot will be returned if it's not existent in the trie.
-func (r *ubtTrieReader) Storage(addr common.Address, key common.Hash) (common.Hash, error) {
+func (r *pbtTrieReader) Storage(addr common.Address, key common.Hash) (common.Hash, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -382,30 +336,44 @@ func (r *multiStateReader) Storage(addr common.Address, slot common.Hash) (commo
 	return common.Hash{}, errors.Join(errs...)
 }
 
+const stateReaderCacheBuckets = 64
+
 // stateReaderWithCache is a wrapper around StateReader that maintains additional
 // state caches to support concurrent state access.
 type stateReaderWithCache struct {
 	StateReader
 
-	// Previously resolved state entries.
-	accounts    map[common.Address]*types.StateAccount
-	accountLock sync.RWMutex
+	// Account buckets are selected by account address. This reader is typically
+	// used in scenarios requiring concurrent access to accounts; multiple buckets
+	// reduce lock contention.
+	accountBuckets [stateReaderCacheBuckets]struct {
+		lock     sync.RWMutex
+		accounts map[common.Address]*types.StateAccount
+	}
 
-	// List of storage buckets, each of which is thread-safe.
-	// This reader is typically used in scenarios requiring concurrent
-	// access to storage. Using multiple buckets helps mitigate
-	// the overhead caused by locking.
-	storageBuckets [16]struct {
+	// Storage buckets are selected by both account address and storage key. This
+	// avoids serializing accesses to distinct slots of the same account.
+	storageBuckets [stateReaderCacheBuckets]struct {
 		lock     sync.RWMutex
 		storages map[common.Address]map[common.Hash]common.Hash
 	}
+}
+
+func accountCacheBucket(addr common.Address) int {
+	return int(addr[0] & (stateReaderCacheBuckets - 1))
+}
+
+func storageCacheBucket(addr common.Address, slot common.Hash) int {
+	return int((addr[0] ^ slot[0] ^ slot[len(slot)-1]) & (stateReaderCacheBuckets - 1))
 }
 
 // newStateReaderWithCache constructs the state reader with local cache.
 func newStateReaderWithCache(sr StateReader) *stateReaderWithCache {
 	r := &stateReaderWithCache{
 		StateReader: sr,
-		accounts:    make(map[common.Address]*types.StateAccount),
+	}
+	for i := range r.accountBuckets {
+		r.accountBuckets[i].accounts = make(map[common.Address]*types.StateAccount)
 	}
 	for i := range r.storageBuckets {
 		r.storageBuckets[i].storages = make(map[common.Address]map[common.Hash]common.Hash)
@@ -419,10 +387,12 @@ func newStateReaderWithCache(sr StateReader) *stateReaderWithCache {
 //
 // An error will be returned if the state is corrupted in the underlying reader.
 func (r *stateReaderWithCache) account(addr common.Address) (*types.StateAccount, bool, error) {
+	bucket := &r.accountBuckets[accountCacheBucket(addr)]
+
 	// Try to resolve the requested account in the local cache
-	r.accountLock.RLock()
-	acct, ok := r.accounts[addr]
-	r.accountLock.RUnlock()
+	bucket.lock.RLock()
+	acct, ok := bucket.accounts[addr]
+	bucket.lock.RUnlock()
 	if ok {
 		return acct, true, nil
 	}
@@ -431,9 +401,9 @@ func (r *stateReaderWithCache) account(addr common.Address) (*types.StateAccount
 	if err != nil {
 		return nil, false, err
 	}
-	r.accountLock.Lock()
-	r.accounts[addr] = acct
-	r.accountLock.Unlock()
+	bucket.lock.Lock()
+	bucket.accounts[addr] = acct
+	bucket.lock.Unlock()
 	return acct, false, nil
 }
 
@@ -453,7 +423,7 @@ func (r *stateReaderWithCache) storage(addr common.Address, slot common.Hash) (c
 	var (
 		value  common.Hash
 		ok     bool
-		bucket = &r.storageBuckets[addr[0]&0x0f]
+		bucket = &r.storageBuckets[storageCacheBucket(addr, slot)]
 	)
 	// Try to resolve the requested storage slot in the local cache
 	bucket.lock.RLock()

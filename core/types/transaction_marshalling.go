@@ -64,7 +64,7 @@ func (tx *txJSON) yParityValue() (*big.Int, error) {
 	if tx.YParity != nil {
 		val := uint64(*tx.YParity)
 		if val != 0 && val != 1 {
-			return nil, errInvalidYParity
+			return nil, ErrInvalidYParity
 		}
 		bigval := new(big.Int).SetUint64(val)
 		if tx.V != nil && tx.V.ToInt().Cmp(bigval) != 0 {
@@ -395,6 +395,9 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 		}
 		if dec.BlobVersionedHashes == nil {
 			return errors.New("missing required field 'blobVersionedHashes' in transaction")
+		}
+		if len(dec.BlobVersionedHashes) == 0 {
+			return errors.New("'blobVersionedHashes' must contain at least one hash")
 		}
 		itx.BlobHashes = dec.BlobVersionedHashes
 

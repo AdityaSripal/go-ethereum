@@ -124,6 +124,9 @@ func (c *Client) newClientConn(conn ServerCodec) *clientConn {
 }
 
 func (cc *clientConn) close(err error, inflightReq *requestOp) {
+	// The connection is gone, so there is no point in finishing calls that are
+	// still being served on it. Cancel them before waiting for them to return.
+	cc.handler.cancelRoot()
 	cc.handler.close(err, inflightReq)
 	cc.codec.close()
 }
@@ -335,7 +338,7 @@ func (c *Client) Call(result interface{}, method string, args ...interface{}) er
 // The result must be a pointer so that package json can unmarshal into it. You
 // can also pass nil, in which case the result is ignored.
 func (c *Client) CallContext(ctx context.Context, result interface{}, method string, args ...interface{}) error {
-	if result != nil && reflect.TypeOf(result).Kind() != reflect.Ptr {
+	if result != nil && reflect.TypeOf(result).Kind() != reflect.Pointer {
 		return fmt.Errorf("call result parameter must be pointer or nil interface: %v", result)
 	}
 	msg, err := c.newMessage(method, args...)
@@ -364,7 +367,7 @@ func (c *Client) CallContext(ctx context.Context, result interface{}, method str
 	resp := batchresp[0]
 	switch {
 	case resp.Error != nil:
-		return resp.Error
+		return resp.decodeError()
 	case len(resp.Result) == 0:
 		return ErrNoResult
 	default:
@@ -397,6 +400,9 @@ func (c *Client) BatchCall(b []BatchElem) error {
 //
 // Note that batch calls may not be executed atomically on the server side.
 func (c *Client) BatchCallContext(ctx context.Context, b []BatchElem) error {
+	if len(b) == 0 {
+		return &invalidRequestError{"empty batch"}
+	}
 	var (
 		msgs = make([]*jsonrpcMessage, len(b))
 		byID = make(map[string]int, len(b))
@@ -419,7 +425,7 @@ func (c *Client) BatchCallContext(ctx context.Context, b []BatchElem) error {
 	if c.isHTTP {
 		err = c.sendBatchHTTP(ctx, op, msgs)
 	} else {
-		err = c.send(ctx, op, msgs)
+		err = c.sendBatch(ctx, op, msgs)
 	}
 	if err != nil {
 		return err
@@ -449,7 +455,7 @@ func (c *Client) BatchCallContext(ctx context.Context, b []BatchElem) error {
 		elem := &b[index]
 		switch {
 		case resp.Error != nil:
-			elem.Error = resp.Error
+			elem.Error = resp.decodeError()
 		case resp.Result == nil:
 			elem.Error = ErrNoResult
 		default:
@@ -552,7 +558,7 @@ func (c *Client) newMessage(method string, paramsIn ...interface{}) (*jsonrpcMes
 
 // send registers op with the dispatch loop, then sends msg on the connection.
 // if sending fails, op is deregistered.
-func (c *Client) send(ctx context.Context, op *requestOp, msg interface{}) error {
+func (c *Client) send(ctx context.Context, op *requestOp, msg *jsonrpcMessage) error {
 	select {
 	case c.reqInit <- op:
 		err := c.write(ctx, msg, false)
@@ -567,7 +573,22 @@ func (c *Client) send(ctx context.Context, op *requestOp, msg interface{}) error
 	}
 }
 
-func (c *Client) write(ctx context.Context, msg interface{}, retry bool) error {
+// sendBatch registers op with the dispatch loop, then sends a batch of messages
+// on the connection. If sending fails, op is deregistered.
+func (c *Client) sendBatch(ctx context.Context, op *requestOp, msgs []*jsonrpcMessage) error {
+	select {
+	case c.reqInit <- op:
+		err := c.writeBatch(ctx, msgs, false)
+		c.reqSent <- err
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.closing:
+		return ErrClientQuit
+	}
+}
+
+func (c *Client) write(ctx context.Context, msg *jsonrpcMessage, retry bool) error {
 	if c.writeConn == nil {
 		// The previous write failed. Try to establish a new connection.
 		if err := c.reconnect(ctx); err != nil {
@@ -579,6 +600,22 @@ func (c *Client) write(ctx context.Context, msg interface{}, retry bool) error {
 		c.writeConn = nil
 		if !retry {
 			return c.write(ctx, msg, true)
+		}
+	}
+	return err
+}
+
+func (c *Client) writeBatch(ctx context.Context, msgs []*jsonrpcMessage, retry bool) error {
+	if c.writeConn == nil {
+		if err := c.reconnect(ctx); err != nil {
+			return err
+		}
+	}
+	err := c.writeConn.writeJSONBatch(ctx, msgs, false)
+	if err != nil {
+		c.writeConn = nil
+		if !retry {
+			return c.writeBatch(ctx, msgs, true)
 		}
 	}
 	return err

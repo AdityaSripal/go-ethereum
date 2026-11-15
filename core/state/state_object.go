@@ -28,8 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/ethereum/go-ethereum/trie/bintrie"
-	"github.com/ethereum/go-ethereum/trie/transitiontrie"
+	"github.com/ethereum/go-ethereum/trie/pbt"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/holiman/uint256"
 )
@@ -184,8 +183,9 @@ func (s *stateObject) getState(key common.Hash) (common.Hash, common.Hash) {
 // without any mutations caused in the current execution.
 func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 	// Record slot access regardless of whether the storage slot exists.
-	s.db.stateReadList.AddState(s.address, key)
-
+	if s.db.stateAccessList != nil {
+		s.db.stateAccessList.StorageRead(s.address, key)
+	}
 	// If we have a pending write or clean cached, return that
 	if value, pending := s.pendingStorage[key]; pending {
 		return value
@@ -274,6 +274,13 @@ func (s *stateObject) finalise() {
 		// map as the dirty slot might have been committed already (before the
 		// byzantium fork) and entry is necessary to modify the value back.
 		s.pendingStorage[key] = value
+
+		// Aggregate storage writes into the block-level access list.
+		// All slots in the dirtyStorage set must have post-transaction
+		// values that differ from their pre-transaction values.
+		if s.db.stateAccessList != nil {
+			s.db.stateAccessList.StorageWrite(s.db.blockAccessIndex, s.address, key, value)
+		}
 	}
 	if s.db.prefetcher != nil && len(slotsToPrefetch) > 0 && s.data.Root != types.EmptyRootHash {
 		if err := s.db.prefetcher.prefetch(s.addrHash(), s.data.Root, s.address, nil, slotsToPrefetch, false); err != nil {
@@ -457,11 +464,11 @@ func (s *stateObject) commit() (*AccountUpdate, *trienode.NodeSet, error) {
 		s.origin = s.data.Copy()
 		return op, nil, nil
 	}
-	// In Verkle/binary trie mode, all state objects share one unified trie.
+	// In binary tree mode, all state objects share one unified trie.
 	// The main account trie commit in stateDB.commit() already calls
 	// CollectNodes on this trie, so calling Commit here again would
 	// redundantly traverse and serialize the entire tree per dirty account.
-	if s.db.GetTrie().IsUBT() {
+	if s.db.GetTrie().IsPBT() {
 		s.origin = s.data.Copy()
 		return op, nil, nil
 	}
@@ -517,13 +524,9 @@ func (s *stateObject) deepCopy(db *StateDB) *stateObject {
 	}
 
 	switch s.trie.(type) {
-	case *bintrie.BinaryTrie:
-		// UBT uses only one tree, and the copy has already been
+	case *pbt.PartitionedTrie:
+		// PBT uses only one tree, and the copy has already been
 		// made in mustCopyTrie.
-		obj.trie = db.trie
-	case *transitiontrie.TransitionTrie:
-		// Same thing for the transition tree, since the MPT is
-		// read-only.
 		obj.trie = db.trie
 	case *trie.StateTrie:
 		obj.trie = mustCopyTrie(s.trie)

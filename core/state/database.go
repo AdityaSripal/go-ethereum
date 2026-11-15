@@ -24,8 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/ethereum/go-ethereum/trie/bintrie"
-	"github.com/ethereum/go-ethereum/trie/transitiontrie"
+	"github.com/ethereum/go-ethereum/trie/pbt"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/triedb"
 )
@@ -37,8 +36,8 @@ const (
 	// TypeMPT indicates a Merkle Patricia Trie (MPT) backed database.
 	TypeMPT DatabaseType = iota
 
-	// TypeUBT indicates a Unified Binary Trie (UBT) backed database.
-	TypeUBT
+	// TypePBT indicates an EIP-8297 Partitioned Binary Tree (PBT) backed database.
+	TypePBT
 )
 
 // Is returns the flag indicating the database type equals to the given one.
@@ -48,7 +47,7 @@ func (typ DatabaseType) Is(t DatabaseType) bool {
 
 // Database wraps access to tries and contract code.
 type Database interface {
-	// Type returns the trie type backing this database (MPT or UBT).
+	// Type returns the trie type backing this database (MPT or PBT).
 	Type() DatabaseType
 
 	// Reader returns a state reader associated with the specified state root.
@@ -107,11 +106,17 @@ type Trie interface {
 	// in the trie with provided address.
 	UpdateAccount(address common.Address, account *types.StateAccount, codeLen int) error
 
+	// UpdateAccountBatch attempts to update a list of accounts in the batch manner.
+	UpdateAccountBatch(addresses []common.Address, accounts []*types.StateAccount, codeLengths []int) error
+
 	// UpdateStorage associates key with value in the trie. If value has length zero,
 	// any existing value is deleted from the trie. The value bytes must not be modified
 	// by the caller while they are stored in the trie. If a node was not found in the
 	// database, a trie.MissingNodeError is returned.
 	UpdateStorage(addr common.Address, key, value []byte) error
+
+	// UpdateStorageBatch attempts to update a list of storages in the batch manner.
+	UpdateStorageBatch(_ common.Address, keys [][]byte, values [][]byte) error
 
 	// DeleteAccount abstracts an account deletion from the trie.
 	DeleteAccount(address common.Address) error
@@ -154,16 +159,16 @@ type Trie interface {
 	// with the node that proves the absence of the key.
 	Prove(key []byte, proofDb ethdb.KeyValueWriter) error
 
-	// IsUBT returns true if the trie is unified binary trie based.
-	IsUBT() bool
+	// IsPBT returns true if the trie is the EIP-8297 partitioned binary tree.
+	IsPBT() bool
 }
 
 // NewDatabase creates a state database with the provided data sources.
 //
-// Deprecated, please use NewMPTDatabase or NewUBTDatabase directly.
+// Deprecated, please use NewMPTDatabase or NewPBTDatabase directly.
 func NewDatabase(tdb *triedb.Database, codedb *CodeDB) Database {
-	if tdb.IsUBT() {
-		return NewUBTDatabase(tdb, codedb)
+	if tdb.IsPBT() {
+		return NewPBTDatabase(tdb, codedb)
 	}
 	return NewMPTDatabase(tdb, codedb)
 }
@@ -180,9 +185,7 @@ func mustCopyTrie(t Trie) Trie {
 	switch t := t.(type) {
 	case *trie.StateTrie:
 		return t.Copy()
-	case *transitiontrie.TransitionTrie:
-		return t.Copy()
-	case *bintrie.BinaryTrie:
+	case *pbt.PartitionedTrie:
 		return t.Copy()
 	default:
 		panic(fmt.Errorf("unknown trie type %T", t))

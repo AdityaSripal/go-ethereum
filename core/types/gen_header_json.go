@@ -31,13 +31,15 @@ func (h Header) MarshalJSON() ([]byte, error) {
 		Extra               hexutil.Bytes   `json:"extraData"        gencodec:"required"`
 		MixDigest           common.Hash     `json:"mixHash"`
 		Nonce               BlockNonce      `json:"nonce"`
+		Step                hexutil.Uint64  `json:"step,omitempty"`
+		Signature           hexutil.Bytes   `json:"signature,omitempty"`
 		BaseFee             *hexutil.Big    `json:"baseFeePerGas" rlp:"optional"`
 		WithdrawalsHash     *common.Hash    `json:"withdrawalsRoot" rlp:"optional"`
 		BlobGasUsed         *hexutil.Uint64 `json:"blobGasUsed" rlp:"optional"`
 		ExcessBlobGas       *hexutil.Uint64 `json:"excessBlobGas" rlp:"optional"`
 		ParentBeaconRoot    *common.Hash    `json:"parentBeaconBlockRoot" rlp:"optional"`
 		RequestsHash        *common.Hash    `json:"requestsHash" rlp:"optional"`
-		BlockAccessListHash *common.Hash    `json:"balHash" rlp:"optional"`
+		BlockAccessListHash *common.Hash    `json:"blockAccessListHash" rlp:"optional"`
 		SlotNumber          *hexutil.Uint64 `json:"slotNumber" rlp:"optional"`
 		Hash                common.Hash     `json:"hash"`
 	}
@@ -57,6 +59,8 @@ func (h Header) MarshalJSON() ([]byte, error) {
 	enc.Extra = h.Extra
 	enc.MixDigest = h.MixDigest
 	enc.Nonce = h.Nonce
+	enc.Step = hexutil.Uint64(h.Step)
+	enc.Signature = h.Signature
 	enc.BaseFee = (*hexutil.Big)(h.BaseFee)
 	enc.WithdrawalsHash = h.WithdrawalsHash
 	enc.BlobGasUsed = (*hexutil.Uint64)(h.BlobGasUsed)
@@ -87,13 +91,15 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 		Extra               *hexutil.Bytes  `json:"extraData"        gencodec:"required"`
 		MixDigest           *common.Hash    `json:"mixHash"`
 		Nonce               *BlockNonce     `json:"nonce"`
+		Step                *hexutil.Uint64 `json:"step,omitempty"`
+		Signature           *hexutil.Bytes  `json:"signature,omitempty"`
 		BaseFee             *hexutil.Big    `json:"baseFeePerGas" rlp:"optional"`
 		WithdrawalsHash     *common.Hash    `json:"withdrawalsRoot" rlp:"optional"`
 		BlobGasUsed         *hexutil.Uint64 `json:"blobGasUsed" rlp:"optional"`
 		ExcessBlobGas       *hexutil.Uint64 `json:"excessBlobGas" rlp:"optional"`
 		ParentBeaconRoot    *common.Hash    `json:"parentBeaconBlockRoot" rlp:"optional"`
 		RequestsHash        *common.Hash    `json:"requestsHash" rlp:"optional"`
-		BlockAccessListHash *common.Hash    `json:"balHash" rlp:"optional"`
+		BlockAccessListHash *common.Hash    `json:"blockAccessListHash" rlp:"optional"`
 		SlotNumber          *hexutil.Uint64 `json:"slotNumber" rlp:"optional"`
 	}
 	var dec Header
@@ -156,6 +162,12 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 	}
 	if dec.Nonce != nil {
 		h.Nonce = *dec.Nonce
+	}
+	if dec.Step != nil {
+		h.Step = uint64(*dec.Step)
+	}
+	if dec.Signature != nil {
+		h.Signature = *dec.Signature
 	}
 	if dec.BaseFee != nil {
 		h.BaseFee = (*big.Int)(dec.BaseFee)

@@ -475,7 +475,7 @@ func BenchmarkSimpleLoop(b *testing.B) {
 		Op(vm.POP).Jump(lbl).Bytes() // pop return value and jump to label
 
 	p, lbl = program.New().Jumpdest()
-	callInexistant := p.
+	callInexistent := p.
 		Call(nil, 0xff, 0, 0, 0, 0, 0).
 		Op(vm.POP).Jump(lbl).Bytes() // pop return value and jump to label
 
@@ -515,7 +515,7 @@ func BenchmarkSimpleLoop(b *testing.B) {
 	benchmarkNonModifyingCode(100000000, callIdentity, "call-identity-100M", "", b)
 	benchmarkNonModifyingCode(100000000, loopingCode, "loop-100M", "", b)
 	benchmarkNonModifyingCode(100000000, loopingCode2, "loop2-100M", "", b)
-	benchmarkNonModifyingCode(100000000, callInexistant, "call-nonexist-100M", "", b)
+	benchmarkNonModifyingCode(100000000, callInexistent, "call-nonexist-100M", "", b)
 	benchmarkNonModifyingCode(100000000, callEOA, "call-EOA-100M", "", b)
 	benchmarkNonModifyingCode(100000000, callRevertingContractWithInput, "call-reverting-100M", "", b)
 
@@ -1018,4 +1018,62 @@ func BenchmarkShortDeepStacks(b *testing.B) {
 		byte(vm.CALL),
 	}...)
 	benchmarkNonModifyingCode(10_000_000, code, "deep-short-stacks-10M", "", b)
+}
+
+// TestTracedCreateAccessList checks that tracing a CREATE or CREATE2, which
+// looks the destination up for the opcode hook before the opcode runs, leaves
+// the block access list exactly as an untraced run does.
+func TestTracedCreateAccessList(t *testing.T) {
+	config := *params.MergedTestChainConfig
+	config.AmsterdamTime = new(uint64)
+
+	var (
+		addr  = common.HexToAddress("0xc0de")
+		rules = config.Rules(big.NewInt(1), true, 0)
+	)
+	for _, tc := range []struct {
+		name string
+		code []byte
+		gas  uint64
+	}{
+		{
+			// A fresh destination is read and charged.
+			name: "create",
+			code: []byte{byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.CREATE), byte(vm.STOP)},
+			gas:  1_000_000,
+		},
+		{
+			// The initcode extends past the memory the hook sees.
+			name: "create2 past memory",
+			code: []byte{byte(vm.PUSH1), 1, byte(vm.PUSH1), 0x40, byte(vm.PUSH1), 0x20, byte(vm.PUSH1), 0, byte(vm.CREATE2), byte(vm.STOP)},
+			gas:  1_000_000,
+		},
+		{
+			// The balance precheck fails, so the destination must not be read.
+			name: "precheck failure",
+			code: []byte{byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.PUSH1), 1, byte(vm.CREATE), byte(vm.STOP)},
+			gas:  1_000_000,
+		},
+		{
+			// The dynamic gas is unaffordable, so the destination must not be read.
+			name: "oog before destination access",
+			code: []byte{byte(vm.PUSH2), 0x80, 0x00, byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.CREATE), byte(vm.STOP)},
+			gas:  params.CreateAccessAmsterdam + 100,
+		},
+	} {
+		var hashes [2]common.Hash
+		for i, traced := range []bool{false, true} {
+			st, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+			st.SetCode(addr, tc.code, tracing.CodeChangeUnspecified)
+			cfg := &Config{ChainConfig: &config, State: st, GasLimit: tc.gas}
+			if traced {
+				cfg.EVMConfig.Tracer = logger.NewStructLogger(nil).Hooks()
+			}
+			Call(addr, nil, cfg)
+			hashes[i] = st.Finalise(rules).ToEncodingObj().Hash()
+		}
+		if hashes[0] != hashes[1] {
+			t.Errorf("%s: block access list differs when traced: untraced %x, traced %x", tc.name, hashes[0], hashes[1])
+		}
+	}
 }

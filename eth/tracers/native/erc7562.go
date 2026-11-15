@@ -135,8 +135,8 @@ type opcodeWithPartialStack struct {
 type erc7562Tracer struct {
 	config    erc7562TracerConfig
 	gasLimit  uint64
-	interrupt atomic.Bool // Atomic flag to signal execution interruption
-	reason    error       // Textual reason for the interruption
+	interrupt atomic.Bool           // Atomic flag to signal execution interruption
+	reason    atomic.Pointer[error] // Reason for the interruption, populated by Stop
 	env       *tracing.VMContext
 
 	ignoredOpcodes       map[vm.OpCode]struct{}
@@ -154,12 +154,12 @@ func newErc7562Tracer(ctx *tracers.Context, cfg json.RawMessage, _ *params.Chain
 	}
 	return &tracers.Tracer{
 		Hooks: &tracing.Hooks{
-			OnTxStart: t.OnTxStart,
-			OnOpcode:  t.OnOpcode,
-			OnTxEnd:   t.OnTxEnd,
-			OnEnter:   t.OnEnter,
-			OnExit:    t.OnExit,
-			OnLog:     t.OnLog,
+			OnTxStart:  t.OnTxStart,
+			OnOpcodeV2: t.OnOpcode,
+			OnTxEnd:    t.OnTxEnd,
+			OnEnterV2:  t.OnEnter,
+			OnExitV2:   t.OnExit,
+			OnLog:      t.OnLog,
 		},
 		GetResult: t.GetResult,
 		Stop:      t.Stop,
@@ -214,7 +214,7 @@ func (t *erc7562Tracer) OnTxStart(env *tracing.VMContext, tx *types.Transaction,
 }
 
 // OnEnter is called when EVM enters a new scope (via call, create or selfdestruct).
-func (t *erc7562Tracer) OnEnter(depth int, typ byte, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
+func (t *erc7562Tracer) OnEnter(depth int, typ byte, from common.Address, to common.Address, input []byte, gas tracing.Gas, value *big.Int) {
 	// Skip if tracing was interrupted
 	if t.interrupt.Load() {
 		return
@@ -226,7 +226,7 @@ func (t *erc7562Tracer) OnEnter(depth int, typ byte, from common.Address, to com
 		From:  from,
 		To:    &toCopy,
 		Input: common.CopyBytes(input),
-		Gas:   gas,
+		Gas:   gas.Execution,
 		Value: value,
 		AccessedSlots: accessedSlots{
 			Reads:           map[common.Hash][]common.Hash{},
@@ -253,7 +253,7 @@ func (t *erc7562Tracer) captureEnd(output []byte, err error, reverted bool) {
 
 // OnExit is called when EVM exits a scope, even if the scope didn't
 // execute any code.
-func (t *erc7562Tracer) OnExit(depth int, output []byte, gasUsed uint64, err error, reverted bool) {
+func (t *erc7562Tracer) OnExit(depth int, output []byte, gasLeft tracing.Gas, err error, reverted bool) {
 	if t.interrupt.Load() {
 		return
 	}
@@ -274,7 +274,7 @@ func (t *erc7562Tracer) OnExit(depth int, output []byte, gasUsed uint64, err err
 	if errors.Is(err, vm.ErrCodeStoreOutOfGas) || errors.Is(err, vm.ErrOutOfGas) {
 		call.OutOfGas = true
 	}
-	call.GasUsed = gasUsed
+	call.GasUsed = gasUsed(call.Gas, gasLeft)
 	call.processOutput(output, err, reverted)
 	// Nest call into parent.
 	t.callstackWithOpcodes[size-1].Calls = append(t.callstackWithOpcodes[size-1].Calls, call)
@@ -308,6 +308,7 @@ func (t *erc7562Tracer) OnLog(log1 *types.Log) {
 		Address:  log1.Address,
 		Topics:   log1.Topics,
 		Data:     log1.Data,
+		Index:    hexutil.Uint(log1.Index),
 		Position: hexutil.Uint(len(t.callstackWithOpcodes[len(t.callstackWithOpcodes)-1].Calls)),
 	}
 	t.callstackWithOpcodes[len(t.callstackWithOpcodes)-1].Logs = append(t.callstackWithOpcodes[len(t.callstackWithOpcodes)-1].Logs, l)
@@ -317,7 +318,10 @@ func (t *erc7562Tracer) OnLog(log1 *types.Log) {
 // error arising from the encoding or forceful termination (via `Stop`).
 func (t *erc7562Tracer) GetResult() (json.RawMessage, error) {
 	if t.interrupt.Load() {
-		return nil, t.reason
+		if p := t.reason.Load(); p != nil {
+			return nil, *p
+		}
+		return nil, nil
 	}
 	if len(t.callstackWithOpcodes) != 1 {
 		return nil, errors.New("incorrect number of top-level calls")
@@ -337,12 +341,15 @@ func (t *erc7562Tracer) GetResult() (json.RawMessage, error) {
 		return nil, err
 	}
 
-	return enc, t.reason
+	if p := t.reason.Load(); p != nil {
+		return enc, *p
+	}
+	return enc, nil
 }
 
 // Stop terminates execution of the tracer at the first opportune moment.
 func (t *erc7562Tracer) Stop(err error) {
-	t.reason = err
+	t.reason.Store(&err)
 	t.interrupt.Store(true)
 }
 
@@ -359,7 +366,7 @@ func (t *erc7562Tracer) clearFailedLogs(cf *callFrameWithOpcodes, parentFailed b
 	}
 }
 
-func (t *erc7562Tracer) OnOpcode(pc uint64, op byte, gas, cost uint64, scope tracing.OpContext, rData []byte, depth int, err error) {
+func (t *erc7562Tracer) OnOpcode(pc uint64, op byte, gas tracing.Gas, cost tracing.OpCost, scope tracing.OpContext, rData []byte, depth int, err error) {
 	if t.interrupt.Load() {
 		return
 	}

@@ -113,7 +113,7 @@ func (db *nofreezedb) Ancients() (uint64, error) {
 }
 
 // Tail returns an error as we don't have a backing chain freezer.
-func (db *nofreezedb) Tail() (uint64, error) {
+func (db *nofreezedb) Tail(group string) (uint64, error) {
 	return 0, errNotSupported
 }
 
@@ -133,7 +133,7 @@ func (db *nofreezedb) TruncateHead(items uint64) (uint64, error) {
 }
 
 // TruncateTail returns an error as we don't have a backing chain freezer.
-func (db *nofreezedb) TruncateTail(items uint64) (uint64, error) {
+func (db *nofreezedb) TruncateTail(group string, items uint64) (uint64, error) {
 	return 0, errNotSupported
 }
 
@@ -352,17 +352,40 @@ const (
 // PreexistingDatabase checks the given data directory whether a database is already
 // instantiated at that location, and if so, returns the type of database (or the
 // empty string).
+//
+// The database flavors are told apart by their on-disk file layout:
+//
+//	            CURRENT   marker.manifest.*   OPTIONS*
+//	leveldb        x
+//	pebble v1      x                              x
+//	pebble v2                      x              x
 func PreexistingDatabase(path string) string {
-	if _, err := os.Stat(filepath.Join(path, "CURRENT")); err != nil {
+	var (
+		hasCurrent = fileExists(filepath.Join(path, "CURRENT"))
+		hasMarker  = anyFileMatches(filepath.Join(path, "marker.manifest.*"))
+		hasOptions = anyFileMatches(filepath.Join(path, "OPTIONS*"))
+	)
+	switch {
+	case hasMarker, hasCurrent && hasOptions:
+		return DBPebble
+	case hasCurrent:
+		return DBLeveldb
+	default:
 		return "" // No pre-existing db
 	}
-	if matches, err := filepath.Glob(filepath.Join(path, "OPTIONS*")); len(matches) > 0 || err != nil {
-		if err != nil {
-			panic(err) // only possible if the pattern is malformed
-		}
-		return DBPebble
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func anyFileMatches(pattern string) bool {
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		panic(err) // only possible if the pattern is malformed
 	}
-	return DBLeveldb
+	return len(matches) > 0
 }
 
 type counter uint64
@@ -434,9 +457,9 @@ func InspectDatabase(db ethdb.Database, keyPrefix, keyStart []byte) error {
 		stateIndex    stat
 		trienodeIndex stat
 
-		// Verkle statistics
-		verkleTries        stat
-		verkleStateLookups stat
+		// Partitioned binary tree statistics
+		pbtTries        stat
+		pbtStateLookups stat
 
 		// Meta- and unaccounted data
 		metadata    stat
@@ -544,14 +567,14 @@ func InspectDatabase(db ethdb.Database, keyPrefix, keyStart []byte) error {
 			case bytes.HasPrefix(key, TrienodeHistoryBlockPrefix) && len(key) >= len(TrienodeHistoryBlockPrefix)+common.HashLength+4:
 				trienodeIndex.add(size)
 
-			// Verkle trie data is detected, determine the sub-category
-			case bytes.HasPrefix(key, VerklePrefix):
-				remain := key[len(VerklePrefix):]
+			// Partitioned binary tree data is detected, determine the sub-category
+			case bytes.HasPrefix(key, PBTPrefix):
+				remain := key[len(PBTPrefix):]
 				switch {
 				case IsAccountTrieNode(remain):
-					verkleTries.add(size)
+					pbtTries.add(size)
 				case bytes.HasPrefix(remain, stateIDPrefix) && len(remain) == len(stateIDPrefix)+common.HashLength:
-					verkleStateLookups.add(size)
+					pbtStateLookups.add(size)
 				case bytes.Equal(remain, persistentStateIDKey):
 					metadata.add(size)
 				case bytes.Equal(remain, trieJournalKey):
@@ -640,8 +663,8 @@ func InspectDatabase(db ethdb.Database, keyPrefix, keyStart []byte) error {
 		{"Key-Value store", "Path trie state lookups", stateLookups.sizeString(), stateLookups.countString()},
 		{"Key-Value store", "Path trie account nodes", accountTries.sizeString(), accountTries.countString()},
 		{"Key-Value store", "Path trie storage nodes", storageTries.sizeString(), storageTries.countString()},
-		{"Key-Value store", "Verkle trie nodes", verkleTries.sizeString(), verkleTries.countString()},
-		{"Key-Value store", "Verkle trie state lookups", verkleStateLookups.sizeString(), verkleStateLookups.countString()},
+		{"Key-Value store", "PBT trie nodes", pbtTries.sizeString(), pbtTries.countString()},
+		{"Key-Value store", "PBT trie state lookups", pbtStateLookups.sizeString(), pbtStateLookups.countString()},
 		{"Key-Value store", "Trie preimages", preimages.sizeString(), preimages.countString()},
 		{"Key-Value store", "Account snapshot", accountSnaps.sizeString(), accountSnaps.countString()},
 		{"Key-Value store", "Storage snapshot", storageSnaps.sizeString(), storageSnaps.countString()},
@@ -658,12 +681,12 @@ func InspectDatabase(db ethdb.Database, keyPrefix, keyStart []byte) error {
 		return err
 	}
 	for _, ancient := range ancients {
-		for _, table := range ancient.sizes {
+		for _, table := range ancient.tables {
 			stats = append(stats, []string{
 				fmt.Sprintf("Ancient store (%s)", strings.Title(ancient.name)),
 				strings.Title(table.name),
 				table.size.String(),
-				fmt.Sprintf("%d", ancient.count),
+				fmt.Sprintf("%d", table.count),
 			})
 		}
 		total.Add(uint64(ancient.size()))
@@ -691,7 +714,7 @@ var knownMetadataKeys = [][]byte{
 	snapshotGeneratorKey, snapshotRecoveryKey, txIndexTailKey, fastTxLookupLimitKey,
 	uncleanShutdownKey, badBlockKey, transitionStatusKey, skeletonSyncStatusKey,
 	persistentStateIDKey, trieJournalKey, snapshotSyncStatusKey, snapSyncStatusFlagKey,
-	filterMapsRangeKey, headStateHistoryIndexKey, headTrienodeHistoryIndexKey, VerkleTransitionStatePrefix,
+	filterMapsRangeKey, headStateHistoryIndexKey, headTrienodeHistoryIndexKey,
 }
 
 // printChainMetadata prints out chain metadata to stderr.
@@ -746,7 +769,7 @@ func ReadChainMetadata(db ethdb.KeyValueStore) [][]string {
 // is periodically called and if it returns an error then SafeDeleteRange
 // stops and also returns that error. The callback is not called if native
 // range delete is used or there are a small number of keys only. The bool
-// argument passed to the callback is true if enrties have actually been
+// argument passed to the callback is true if entries have actually been
 // deleted already.
 func SafeDeleteRange(db ethdb.KeyValueStore, start, end []byte, hashScheme bool, stopCallback func(bool) bool) error {
 	if !hashScheme {
@@ -801,6 +824,9 @@ func SafeDeleteRange(db ethdb.KeyValueStore, start, end []byte, hashScheme bool,
 			it = db.NewIterator(nil, start)
 			count = 0
 		}
+	}
+	if err := it.Error(); err != nil {
+		return err
 	}
 	return batch.Write()
 }

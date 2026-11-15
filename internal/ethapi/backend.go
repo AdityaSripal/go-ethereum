@@ -19,6 +19,7 @@ package ethapi
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"time"
 
@@ -37,6 +38,18 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
+var (
+	// ErrSafeBlockNotFound is returned by Backend.HeaderByNumber and
+	// Backend.BlockByNumber when the safe block is requested before one is
+	// known.
+	ErrSafeBlockNotFound = errors.New("safe block not found")
+
+	// ErrFinalizedBlockNotFound is returned by Backend.HeaderByNumber and
+	// Backend.BlockByNumber when the finalized block is requested before one
+	// is known.
+	ErrFinalizedBlockNotFound = errors.New("finalized block not found")
+)
+
 // Backend interface provides the common API services (that are provided by
 // both full and light clients) with access to necessary functions.
 type Backend interface {
@@ -46,6 +59,7 @@ type Backend interface {
 	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
 	FeeHistory(ctx context.Context, blockCount uint64, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (*big.Int, [][]*big.Int, []*big.Int, []float64, []*big.Int, []float64, error)
 	BlobBaseFee(ctx context.Context) *big.Int
+	BaseFee(ctx context.Context) *big.Int
 	ChainDb() ethdb.Database
 	AccountManager() *accounts.Manager
 	ExtRPCEnabled() bool
@@ -57,7 +71,7 @@ type Backend interface {
 	RPCTxSyncMaxTimeout() time.Duration
 
 	// Blockchain API
-	SetHead(number uint64)
+	SetHead(number uint64) error
 	HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error)
 	HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error)
 	HeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*types.Header, error)
@@ -90,6 +104,7 @@ type Backend interface {
 	ChainConfig() *params.ChainConfig
 	Engine() consensus.Engine
 	HistoryPruningCutoff() uint64
+	HistoryRetention() HistoryRetention
 
 	// This is copied from filters.Backend
 	// eth/filters needs to be initialized from this backend type, so methods needed by
